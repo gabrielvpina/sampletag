@@ -1,6 +1,10 @@
-# SampleTag
+<p align="center">
+  <img src="assets/icon/sampletag_icon.svg" alt="Ícone do SampleTag: folha verde com etiqueta amarela" width="128">
+</p>
 
-App Flutter (Android e iOS) para **registrar e etiquetar amostras de campo** (biológicas e técnicas), 100% offline, com exportação de um **relatório HTML autocontido** com mapa e todas as amostras.
+<h1 align="center">SampleTag</h1>
+
+App Android (Flutter) para **registrar e etiquetar amostras de campo** (biológicas e técnicas), 100% offline, com exportação de um **relatório HTML autocontido** com mapa e todas as amostras.
 
 ## Funcionalidades
 
@@ -65,6 +69,7 @@ tool/          generate_demo_report.dart
 - **Estado:** Riverpod 3. **Banco:** drift/SQLite com migrações versionadas em `AppDatabase.migrations`.
 - **UI:** Material 3 via `package:material_ui` (no Flutter 3.50 o Material saiu do SDK). Pacotes que ainda usam `package:flutter/material.dart` (flutter_map, printing, mobile_scanner) funcionam por meio do `MaterialUiCompatibilityBridge`.
 - Os geradores (CSV, KML, HTML, PDF, QR) são **Dart puro**, testáveis sem aparelho.
+- **Ícone:** `assets/icon/` (SVG; folha com etiqueta). É o ícone do app (adaptativo e monocromático no Android 8+/13+), a tela de abertura e aparece no cabeçalho e como favicon do relatório HTML. Para alterar: edite `tool/generate_icon_svgs.py` e rode `cd assets/icon && python3 ../../tool/generate_icon_svgs.py && ../../tool/generate_android_icons.sh` (requer `brew install librsvg`).
 - As fotos ficam em `<documentos do app>/photos/` e o banco guarda só o nome do arquivo.
 - **Limites territoriais** (`assets/geo/`, ver `FONTE.md`): malha intermediária do IBGE para as 27 UFs e 5.570 municípios. No app servem de mapa base e para **preencher município/UF a partir do GPS sem internet** (a geocodificação online fica como reserva). No relatório são simplificados (Douglas-Peucker) e codificados em formato "polyline" para manter o HTML leve (~170 KB de limites com a Bahia e seus 417 municípios; o relatório de exemplo inteiro tem ~470 KB).
 - Para atualizar os limites, baixe de novo da API de malhas do IBGE e reprocesse (coordenadas com 4 casas, propriedades `uf`/`c` e `n`).
@@ -72,7 +77,7 @@ tool/          generate_demo_report.dart
 ## Requisitos
 
 - Flutter 3.50+ (Dart 3.14+)
-- Android SDK (API 24+) e/ou Xcode 16+ (iOS 15+)
+- Android SDK (API 24+) e JDK 17
 
 > **minSdk:** o pedido original era API 23, mas o Flutter 3.50 só suporta Android 7.0+ (**API 24**), que é o valor configurado.
 
@@ -85,10 +90,50 @@ flutter gen-l10n                # gera lib/l10n/app_localizations*.dart (já ver
 
 flutter run                     # aparelho/emulador conectado
 flutter build apk --release     # build/app/outputs/flutter-apk/app-release.apk
-flutter build ios --release     # requer Xcode e assinatura
 ```
 
 O build release usa a chave de debug — configure sua assinatura em `android/app/build.gradle.kts` antes de publicar.
+
+## Publicar uma versão (GitHub Releases)
+
+O workflow `.github/workflows/release.yml` roda testes, compila e publica os APKs (arm64-v8a, armeabi-v7a, x86_64 e universal, com `SHA256SUMS.txt`) numa Release sempre que uma tag `v*` é enviada.
+
+**Uma vez só — chave de assinatura.** Todas as versões precisam ser assinadas com a **mesma chave**; senão o Android não atualiza o app instalado. Guarde o arquivo e as senhas fora do repositório (gerenciador de senhas + backup).
+
+```bash
+keytool -genkeypair -v -keystore ~/sampletag-upload.jks -keyalg RSA -keysize 2048 \
+        -validity 10000 -alias upload
+
+# Segredos do repositório (cada comando pede o valor)
+base64 -i ~/sampletag-upload.jks | gh secret set ANDROID_KEYSTORE_BASE64
+gh secret set ANDROID_KEYSTORE_PASSWORD
+gh secret set ANDROID_KEY_PASSWORD
+gh secret set ANDROID_KEY_ALIAS --body upload
+```
+
+Para builds locais assinados, crie `android/key.properties` (já ignorado pelo git):
+
+```properties
+storeFile=/caminho/para/sampletag-upload.jks
+storePassword=...
+keyAlias=upload
+keyPassword=...
+```
+
+Sem esse arquivo o build release usa a chave de debug (o Gradle avisa).
+
+**A cada versão:**
+
+```bash
+# 1. pubspec.yaml: version: 1.1.0+2   (nome+código; o código sempre aumenta)
+git commit -am "Versão 1.1.0"
+git push
+# 2. a tag precisa bater com o nome da versão
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+Acompanhe em *Actions*; ao terminar, a Release aparece em *Releases* com os APKs. Sem Actions, dá para publicar à mão: `gh release create v1.1.0 build/app/outputs/flutter-apk/*.apk --generate-notes`.
 
 ## Testes
 

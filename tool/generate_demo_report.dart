@@ -36,6 +36,7 @@ Future<void> main(List<String> args) async {
     templateHtml: await File('assets/report/template.html').readAsString(),
     leafletJs: await File('assets/report/leaflet.min.js').readAsString(),
     leafletCss: await File('assets/report/leaflet.min.css').readAsString(),
+    iconSvg: await File('assets/icon/sampletag_icon.svg').readAsString(),
   ));
 
   final file = File('${outDir.path}/${reportFileName(settings.project, now)}');

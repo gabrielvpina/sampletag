@@ -27,6 +27,7 @@ class ReportInput {
     this.thumbnails = const {},
     this.title,
     this.geo,
+    this.iconSvg = '',
   });
 
   final List<Sample> samples;
@@ -45,6 +46,10 @@ class ReportInput {
 
   /// Limites de estados/municípios para o mapa base offline.
   final ReportGeo? geo;
+
+  /// Ícone do app (assets/icon/sampletag_icon.svg), usado no cabeçalho e
+  /// como favicon. Vazio = sem ícone.
+  final String iconSvg;
 }
 
 /// Escapa texto para conteúdo e atributos HTML.
@@ -107,6 +112,8 @@ class HtmlReportBuilder {
 
     final values = <String, String>{
       'TITLE': escapeHtml('SampleTag — $heading'),
+      'ICON_SVG': _inlineSvg(input.iconSvg),
+      'FAVICON': input.iconSvg.isEmpty ? '' : 'data:image/svg+xml;base64,${base64Encode(utf8.encode(input.iconSvg))}',
       'HEADING': escapeHtml(heading),
       'META': _meta(samples, input),
       'STATS': _stats(samples, templates),
@@ -349,6 +356,16 @@ class HtmlReportBuilder {
           },
       ],
     };
+  }
+
+  /// SVG do ícone pronto para uso inline: sem declaração XML, sem scripts.
+  static String _inlineSvg(String svg) {
+    final start = svg.indexOf('<svg');
+    if (start < 0) return '';
+    final out = svg.substring(start).trim();
+    // O ícone é um asset do app, mas por segurança recusa conteúdo ativo.
+    if (RegExp(r'<script|\son\w+\s*=|javascript:', caseSensitive: false).hasMatch(out)) return '';
+    return out;
   }
 
   /// Só aceita cores `#RRGGBB` (evita injeção via atributo style).

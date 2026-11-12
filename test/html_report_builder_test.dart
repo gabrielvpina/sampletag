@@ -99,6 +99,20 @@ void main() {
     });
   });
 
+  test('ícone no cabeçalho e como favicon; SVG com script é recusado', () async {
+    final icon = await File('assets/icon/sampletag_icon.svg').readAsString();
+    final base = input(demoSamples());
+    ReportInput withIcon(String svg) => ReportInput(
+          samples: base.samples, templates: base.templates, settings: base.settings, generatedAt: base.generatedAt,
+          templateHtml: base.templateHtml, leafletJs: base.leafletJs, leafletCss: base.leafletCss, iconSvg: svg,
+        );
+    final html = const HtmlReportBuilder().build(withIcon(icon));
+    expect(html, contains('<span class="brand-mark" aria-hidden="true"><svg'));
+    expect(html, contains('<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,'));
+    final evil = const HtmlReportBuilder().build(withIcon('<svg onload="alert(1)"></svg>'));
+    expect(evil, isNot(contains('onload')));
+  });
+
   test('textos do usuário são escapados (injeção de HTML)', () {
     const evil = '<img src=x onerror=alert(1)>';
     final s = demoSamples().first.copyWith(

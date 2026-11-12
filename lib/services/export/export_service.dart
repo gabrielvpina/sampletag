@@ -176,6 +176,7 @@ class ExportService {
       templateHtml: await rootBundle.loadString('assets/report/template.html'),
       leafletJs: await rootBundle.loadString('assets/report/leaflet.min.js'),
       leafletCss: await rootBundle.loadString('assets/report/leaflet.min.css'),
+      iconSvg: await rootBundle.loadString('assets/icon/sampletag_icon.svg'),
       thumbnails: thumbs,
     ));
     return _writeTemp(reportFileName(s.project, now), utf8.encode(html));
