@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sampletag/domain/geo.dart';
 import 'package:sampletag/domain/models.dart';
 import 'package:sampletag/domain/seed_data.dart';
 import 'package:sampletag/services/export/html_report_builder.dart';
@@ -114,8 +115,8 @@ void main() {
     expect(html, contains('&lt;img src=x onerror=alert(1)&gt;'));
     // O placeholder digitado pelo usuário não é expandido (substituição em uma passada).
     expect(html, contains('{{SHEETS}}'));
-    // Apenas os dois blocos <script> do template + o de dados.
-    expect('<script'.allMatches(html).length, 3);
+    // Só os blocos <script> do template: dados, limites, Leaflet e app.
+    expect('<script'.allMatches(html).length, 4);
     // E o JSON continua íntegro.
     final data = embeddedJson(html);
     expect(((data['samples'] as List).first as Map)['collectorName'], evil);
@@ -136,6 +137,24 @@ void main() {
     final html = const HtmlReportBuilder().build(input([s]));
     expect(html, contains('Nenhuma amostra com coordenadas.'));
     expect(html, contains('1 amostra sem coordenadas'));
+  });
+
+  test('limites IBGE entram no SVG e no JSON de limites', () async {
+    final lib = GeoLibrary((path) => File(path).readAsString());
+    final geo = await ReportGeo.build(lib, highlighted: {'BA'}, includeMunicipalities: true);
+    final base = input(demoSamples());
+    final html = const HtmlReportBuilder().build(ReportInput(
+      samples: base.samples, templates: base.templates, settings: base.settings, generatedAt: base.generatedAt,
+      templateHtml: base.templateHtml, leafletJs: base.leafletJs, leafletCss: base.leafletCss, geo: geo,
+    ));
+    final m = RegExp(r'<script type="application/json" id="geo-data">(.*?)</script>', dotAll: true).firstMatch(html)!;
+    final data = jsonDecode(m.group(1)!) as Map;
+    expect((data['states'] as List), hasLength(27));
+    expect((data['municipalities'] as List).map((e) => (e as Map)['n']), contains('Ilhéus'));
+    // SVG: municípios do enquadramento aparecem com nome.
+    expect(html, contains('<title>Ilhéus</title>'));
+    // Tamanho sob controle (Bahia inteira com municípios).
+    expect(m.group(1)!.length, lessThan(400 * 1024));
   });
 
   test('mapa SVG tem grade, escala e projeção coerente', () {

@@ -120,3 +120,95 @@ class SectionTitle extends StatelessWidget {
         ),
       );
 }
+
+/// Diálogo com um campo de texto. O controller pertence ao próprio diálogo
+/// e é descartado só quando ele sai da árvore (depois da animação de
+/// fechamento) — descartar logo após o `pop` causa erro de "controller used
+/// after being disposed".
+Future<String?> promptText(
+  BuildContext context, {
+  required String title,
+  String? message,
+  String? label,
+  String? hint,
+  int? maxLength,
+  Key? fieldKey,
+  String confirmLabel = 'OK',
+  bool cancelable = true,
+  TextCapitalization capitalization = TextCapitalization.none,
+}) =>
+    showDialog<String>(
+      context: context,
+      barrierDismissible: cancelable,
+      builder: (_) => _PromptDialog(
+        title: title,
+        message: message,
+        label: label,
+        hint: hint,
+        maxLength: maxLength,
+        fieldKey: fieldKey,
+        confirmLabel: confirmLabel,
+        cancelable: cancelable,
+        capitalization: capitalization,
+      ),
+    );
+
+class _PromptDialog extends StatefulWidget {
+  const _PromptDialog({
+    required this.title,
+    this.message,
+    this.label,
+    this.hint,
+    this.maxLength,
+    this.fieldKey,
+    required this.confirmLabel,
+    required this.cancelable,
+    required this.capitalization,
+  });
+
+  final String title;
+  final String? message;
+  final String? label;
+  final String? hint;
+  final int? maxLength;
+  final Key? fieldKey;
+  final String confirmLabel;
+  final bool cancelable;
+  final TextCapitalization capitalization;
+
+  @override
+  State<_PromptDialog> createState() => _PromptDialogState();
+}
+
+class _PromptDialogState extends State<_PromptDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(widget.title),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (widget.message != null) ...[Text(widget.message!), const SizedBox(height: 12)],
+            TextField(
+              key: widget.fieldKey,
+              controller: _ctrl,
+              autofocus: true,
+              maxLength: widget.maxLength,
+              textCapitalization: widget.capitalization,
+              decoration: InputDecoration(labelText: widget.label, hintText: widget.hint),
+              onSubmitted: (v) => Navigator.pop(context, v),
+            ),
+          ]),
+        ),
+        actions: [
+          if (widget.cancelable) TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(context, _ctrl.text), child: Text(widget.confirmLabel)),
+        ],
+      );
+}

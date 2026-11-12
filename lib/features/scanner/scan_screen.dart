@@ -59,25 +59,13 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   }
 
   Future<void> _typeCode() async {
-    final ctrl = TextEditingController();
-    final code = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Digitar código'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.characters,
-          decoration: const InputDecoration(hintText: 'CAC-2026-0001'),
-          onSubmitted: (v) => Navigator.pop(c, v),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(c, ctrl.text), child: const Text('Abrir')),
-        ],
-      ),
+    final code = await promptText(
+      context,
+      title: 'Digitar código',
+      hint: 'CAC-AS-2026-0001',
+      confirmLabel: 'Abrir',
+      capitalization: TextCapitalization.characters,
     );
-    ctrl.dispose();
     if (code != null && code.trim().isNotEmpty) await _open(code);
   }
 

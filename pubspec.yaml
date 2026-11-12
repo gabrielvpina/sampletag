@@ -82,3 +82,5 @@ flutter:
   generate: true
   assets:
     - assets/report/
+    - assets/geo/
+    - assets/geo/municipios/

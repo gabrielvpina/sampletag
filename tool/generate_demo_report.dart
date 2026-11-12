@@ -7,6 +7,7 @@
 
 import 'dart:io';
 
+import 'package:sampletag/domain/geo.dart';
 import 'package:sampletag/domain/models.dart';
 import 'package:sampletag/domain/seed_data.dart';
 import 'package:sampletag/services/export/html_report_builder.dart';
@@ -19,9 +20,16 @@ Future<void> main(List<String> args) async {
     collectorName: 'Ana Souza',
     project: 'Cacau Sul da Bahia',
   );
+  final samples = demoSamples();
+  final geo = await ReportGeo.build(
+    GeoLibrary((path) => File(path).readAsString()),
+    highlighted: effectiveStates(samples.map((s) => s.state), settings.mapStates),
+    includeMunicipalities: settings.municipalBoundaries,
+  );
   final now = DateTime.now();
   final html = const HtmlReportBuilder().build(ReportInput(
-    samples: demoSamples(),
+    samples: samples,
+    geo: geo,
     templates: {cacauTemplate.id: cacauTemplate},
     settings: settings,
     generatedAt: now,

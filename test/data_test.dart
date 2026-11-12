@@ -33,8 +33,12 @@ void main() {
     expect(await repo.codeExists('CAC-2026-0001'), isTrue);
     expect(await repo.codeExists('CAC-2026-0001', exceptId: 'demo-1'), isFalse);
     expect(
-      await repo.nextCode(pattern: AppSettings.defaultIdPattern, prefix: 'CAC', date: DateTime(2026, 12)),
+      await repo.nextCode(pattern: '{PREFIXO}-{AAAA}-{SEQ4}', prefix: 'CAC', date: DateTime(2026, 12)),
       'CAC-2026-0006',
+    );
+    expect(
+      await repo.nextCode(pattern: AppSettings.defaultIdPattern, prefix: 'CAC', date: DateTime(2026, 12), collector: 'AS'),
+      'CAC-AS-2026-0001',
     );
 
     final s = (await repo.getById('demo-1'))!;

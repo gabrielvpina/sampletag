@@ -7,22 +7,36 @@ App Flutter (Android e iOS) para **registrar e etiquetar amostras de campo** (bi
 | Tela | O que faz |
 |---|---|
 | **Amostras** | Lista com busca (ignora acentos), filtros (modelo, período, coletor, município), ordenação e contador. Card com miniatura, código, data e município. |
-| **Nova/editar amostra** | Escolha do modelo, código gerado automaticamente (editável), data/hora e coletor preenchidos, GPS com precisão em metros (aviso > 20 m e "Aguardar melhor precisão"), município/UF por geocodificação reversa (quando há internet), várias fotos (câmera/galeria, lado maior 1600 px, JPEG 80%), campos extras do modelo, **rascunho salvo automaticamente**. |
+| **Nova/editar amostra** | Escolha do modelo, código gerado automaticamente (editável; padrão `CAC-AS-2026-0001`, com o código do coletor), data/hora e coletor preenchidos, GPS com precisão em metros (aviso > 20 m e "Aguardar melhor precisão"), município/UF por geocodificação reversa (quando há internet), várias fotos (câmera/galeria, lado maior 1600 px, JPEG 80%), campos extras do modelo, **rascunho salvo automaticamente**. |
 | **Detalhe** | Todos os dados, fotos (tela cheia com zoom), mini-mapa e QR code. |
 | **Etiqueta** | PDF no layout da ficha (cabeçalho "FICHA DE AMOSTRA - {MODELO}", campos, QR com JSON compacto, rodapé com armazenamento) em 50×30 mm, 100×70 mm e A4 (8 por folha). Imprime e compartilha via `printing`. |
 | **Escanear** | Lê o QR da etiqueta (ou digita o código) e abre a amostra. |
-| **Mapa** | Todas as amostras (respeitando os filtros) em `flutter_map` com tiles OSM e cache; sem internet os pontos aparecem sobre fundo neutro. |
+| **Mapa** | Todas as amostras (respeitando os filtros) em `flutter_map`. Fundo com limites de estados e municípios do IBGE embutidos (funciona sem internet); tiles OSM por cima quando há conexão. |
 | **Modelos** | Criar/editar modelos: nome, prefixo, cor, categoria, armazenamento padrão e campos extras (texto, número, lista, data; obrigatórios ou não). Vem com **Cacau**. |
-| **Exportar** | Relatório HTML, CSV (`;`, UTF-8 com BOM), KML (Google Earth/QGIS), backup ZIP (banco + fotos) e restauração. Tudo pela folha de compartilhamento — nada sai do aparelho sem ação do usuário. |
-| **Ajustes** | Coletor padrão, projeto/expedição, formato do código, tema claro/escuro e carga das 5 amostras de exemplo. |
+| **Exportar** | Relatório HTML, CSV (`;`, UTF-8 com BOM), KML (Google Earth/QGIS), backup ZIP (banco + fotos), restauração e **importação de coleta de outro celular**. Tudo pela folha de compartilhamento — nada sai do aparelho sem ação do usuário. |
+| **Ajustes** | Coletor padrão, projeto/expedição, formato do código, **mapa base** (país, estados da coleta, limites municipais), tema claro/escuro e carga das 5 amostras de exemplo. |
+
+### Juntar dados de vários celulares
+
+1. **Cada celular tem um código de coletor** (Ajustes → "Código do coletor", ou as iniciais do nome). O formato padrão `{PREFIXO}-{COLETOR}-{AAAA}-{SEQ4}` gera `CAC-AS-2026-0001`, `CAC-JL-2026-0001`…, então dois celulares nunca criam o mesmo código. Na primeira amostra, se não houver código nem nome, o app pede.
+2. **Cada coletor** usa *Exportar → Criar backup (ZIP)* e envia o arquivo a quem vai juntar os dados.
+3. **Quem junta** usa *Exportar → Importar coleta de outro celular* para cada ZIP. A prévia mostra:
+   - amostras novas, atualizadas (versão recebida mais recente), já iguais e com versão local mais recente;
+   - **códigos repetidos** (amostras diferentes com o mesmo código), com a escolha *Renomear* (`…-B`), *Pular* ou *Substituir*, para todas ou uma a uma;
+   - modelos de ficha novos (modelos com mesmo nome e prefixo são reaproveitados).
+   A importação **não altera as configurações** de quem importa, copia só as fotos necessárias e pode ser repetida sem duplicar nada.
+4. Com tudo no mesmo aparelho, gere o **Relatório HTML**.
+
+*Restaurar backup deste aparelho* continua existindo para recuperar uma cópia própria (inclui configurações); se encontrar códigos repetidos, ele recusa e indica a importação.
 
 ### Relatório HTML
 
 Um único `.html` (`SampleTag_Relatorio_{projeto}_{AAAA-MM-DD}.html`) que abre em qualquer navegador:
 
 - Leaflet 1.9.4 (JS/CSS) e fotos (miniaturas ~400 px, JPEG 70%, base64) **embutidos**;
-- mapa com marcadores coloridos por modelo, `fitBounds`, agrupamento simples acima de 25 pontos e popup com código, data, coletor, clone, município/UF e miniatura;
-- **mapa SVG offline** (projeção equiretangular, grade lat/long, escala e norte), usado automaticamente quando os tiles não carregam;
+- **mapa base offline com limites do IBGE** (todas as UFs como contexto, UFs da coleta em destaque e, opcionalmente, seus municípios com nome ao passar o mouse). Funciona sem internet e abrindo o arquivo direto do disco; o OpenStreetMap é uma camada opcional no seletor do mapa;
+- marcadores coloridos por modelo, `fitBounds`, agrupamento simples acima de 25 pontos e popup com código, data, coletor, clone, município/UF e miniatura;
+- **mapa estático em SVG** (para impressão), com os mesmos limites, projeção equiretangular, grade lat/long, escala e norte;
 - cabeçalho com projeto, período, data de geração e totais por modelo, coletor e município;
 - tabela com todas as colunas, busca em tempo real, ordenação por coluna e filtro por modelo; clicar na linha centraliza o mapa e abre o popup;
 - uma ficha por amostra (campos, campos personalizados, fotos e QR em SVG);
@@ -52,6 +66,8 @@ tool/          generate_demo_report.dart
 - **UI:** Material 3 via `package:material_ui` (no Flutter 3.50 o Material saiu do SDK). Pacotes que ainda usam `package:flutter/material.dart` (flutter_map, printing, mobile_scanner) funcionam por meio do `MaterialUiCompatibilityBridge`.
 - Os geradores (CSV, KML, HTML, PDF, QR) são **Dart puro**, testáveis sem aparelho.
 - As fotos ficam em `<documentos do app>/photos/` e o banco guarda só o nome do arquivo.
+- **Limites territoriais** (`assets/geo/`, ver `FONTE.md`): malha intermediária do IBGE para as 27 UFs e 5.570 municípios. No app servem de mapa base e para **preencher município/UF a partir do GPS sem internet** (a geocodificação online fica como reserva). No relatório são simplificados (Douglas-Peucker) e codificados em formato "polyline" para manter o HTML leve (~170 KB de limites com a Bahia e seus 417 municípios; o relatório de exemplo inteiro tem ~470 KB).
+- Para atualizar os limites, baixe de novo da API de malhas do IBGE e reprocesse (coordenadas com 4 casas, propriedades `uf`/`c` e `n`).
 
 ## Requisitos
 
@@ -83,10 +99,12 @@ flutter test integration_test/app_flow_test.dart -d <device>
 dart run tool/generate_demo_report.dart           # relatório de demonstração em demo/
 ```
 
-- `test/sample_code_test.dart` — geração do código (`CAC-2026-0001`).
+- `test/sample_code_test.dart` — geração do código, `{COLETOR}` e iniciais.
+- `test/import_test.dart` — planejamento da importação (novas, atualizadas, conflitos, modelos) e cenário completo de dois celulares (backup → importação → reimportação).
 - `test/exporters_test.dart` — CSV (escape, injeção de fórmula), KML e QR.
 - `test/html_report_builder_test.dart` — gerador do HTML: autocontido, placeholders, JSON, escape contra injeção, mapa SVG.
 - `test/data_test.dart` — banco (modelo Cacau, CRUD, rascunhos), filtros e PDF das etiquetas.
+- `test/geo_test.dart` — limites IBGE: localização offline de UF/município, codificação, simplificação e configurações do mapa.
 - `test/sample_form_widget_test.dart` — formulário (validação e salvamento) e fluxo criar amostra → exportar relatório.
 - `integration_test/app_flow_test.dart` — mesmo fluxo em aparelho real.
 

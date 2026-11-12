@@ -30,6 +30,14 @@ android {
         versionName = flutter.versionName
     }
 
+    lint {
+        // O "lint vital" do AGP trava (NoSuchMethodError no JavaDocParser) ao
+        // analisar o código Java de plugins. Não afeta o app; reativar quando
+        // o AGP corrigir.
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

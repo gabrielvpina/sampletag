@@ -10,6 +10,7 @@ import '../../core/errors.dart';
 import '../../core/format.dart';
 import '../../core/widgets.dart';
 import '../../domain/models.dart';
+import '../../domain/sample_code.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers.dart';
 import '../../services/location_service.dart';
@@ -109,6 +110,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
         await ref.read(settingsRepoProvider).clearDraft(_draftSlot);
       }
     }
+    if (!_isEdit && settings.needsCollectorCode && mounted) await _askCollectorCode(settings);
     if (!_isEdit && _template != null && _code.text.isEmpty) await _generateCode();
     if (!_isEdit) {
       // Android pode matar o app enquanto a câmera está aberta.
@@ -243,8 +245,30 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
           pattern: settings.idPattern,
           prefix: t.codePrefix,
           date: _collectedAt,
+          collector: settings.collectorTag,
         );
     if (mounted) setState(() => _code.text = code);
+  }
+
+  /// Primeira amostra: o formato usa {COLETOR}, mas não há código nem nome
+  /// do coletor. Pede o código uma vez e salva nos ajustes.
+  Future<void> _askCollectorCode(AppSettings settings) async {
+    final raw = await promptText(
+      context,
+      title: 'Código do coletor',
+      message: 'Cada celular usa um código curto (ex.: suas iniciais) no código das amostras, '
+          'para que amostras de pessoas diferentes nunca tenham o mesmo código ao juntar os dados.',
+      label: 'Código (1 a 4 letras)',
+      hint: 'AS',
+      maxLength: 4,
+      fieldKey: const Key('collector-code-field'),
+      confirmLabel: 'Salvar',
+      cancelable: false,
+      capitalization: TextCapitalization.characters,
+    );
+    final code = normalizeCollectorCode(raw ?? '');
+    if (code.isEmpty) return;
+    await ref.read(settingsRepoProvider).save(settings.copyWith(collectorCode: code));
   }
 
   // ---------------------------------------------------------------------------
@@ -298,13 +322,30 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
     _changed();
   }
 
+  /// Preenche município/UF vazios. Primeiro usa os limites do IBGE
+  /// embutidos (funciona sem internet e devolve nomes oficiais); se o ponto
+  /// cair fora do Brasil, tenta a geocodificação online.
   Future<void> _reverseGeocode(double lat, double lon) async {
     if (_city.text.isNotEmpty && _uf.text.isNotEmpty) return;
-    final place = await ref.read(geocodingServiceProvider).reverse(lat, lon);
-    if (place == null || !mounted) return;
+    String? city, uf;
+    try {
+      final local = await ref.read(geoLibraryProvider).locate(lat, lon);
+      if (local != null) {
+        city = local.municipality;
+        uf = local.uf;
+      }
+    } on Object {
+      // Asset ilegível: segue para a geocodificação online.
+    }
+    if (city == null || city.isEmpty) {
+      final place = await ref.read(geocodingServiceProvider).reverse(lat, lon);
+      city = place?.municipality ?? city;
+      uf ??= place?.state;
+    }
+    if (!mounted) return;
     setState(() {
-      if (_city.text.isEmpty) _city.text = place.municipality;
-      if (_uf.text.isEmpty) _uf.text = place.state;
+      if (_city.text.isEmpty && (city ?? '').isNotEmpty) _city.text = city!;
+      if (_uf.text.isEmpty && (uf ?? '').isNotEmpty) _uf.text = uf!;
     });
     _changed();
   }

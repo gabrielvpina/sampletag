@@ -4,6 +4,8 @@
 ///
 /// Tokens suportados:
 /// - `{PREFIXO}`: prefixo do modelo (ex.: CAC)
+/// - `{COLETOR}`: código do coletor/aparelho (ex.: AS) — evita que dois
+///   celulares gerem o mesmo código
 /// - `{AAAA}` / `{AA}`: ano com 4 / 2 dígitos
 /// - `{MM}` / `{DD}`: mês / dia com 2 dígitos
 /// - `{SEQ}`: sequência com 4 dígitos; `{SEQn}`: sequência com n dígitos
@@ -12,10 +14,12 @@ String formatSampleCode({
   required String prefix,
   required DateTime date,
   required int sequence,
+  String collector = '',
 }) {
   String two(int v) => v.toString().padLeft(2, '0');
   var out = pattern
       .replaceAll('{PREFIXO}', prefix.toUpperCase())
+      .replaceAll('{COLETOR}', collector.toUpperCase())
       .replaceAll('{AAAA}', date.year.toString().padLeft(4, '0'))
       .replaceAll('{AA}', two(date.year % 100))
       .replaceAll('{MM}', two(date.month))
@@ -34,6 +38,7 @@ RegExp sampleCodeMatcher({
   required String pattern,
   required String prefix,
   required DateTime date,
+  String collector = '',
 }) {
   // Primeiro substitui os tokens fixos e marca a sequência; depois escapa o
   // restante para que caracteres como "." ou "-" sejam literais.
@@ -43,6 +48,7 @@ RegExp sampleCodeMatcher({
     prefix: prefix,
     date: date,
     sequence: 0,
+    collector: collector,
   );
   final parts = filled.split(seqMark).map(RegExp.escape).toList();
   return RegExp('^${parts.join(r'(\d+)')}\$');
@@ -55,8 +61,9 @@ int nextSequence({
   required String pattern,
   required String prefix,
   required DateTime date,
+  String collector = '',
 }) {
-  final re = sampleCodeMatcher(pattern: pattern, prefix: prefix, date: date);
+  final re = sampleCodeMatcher(pattern: pattern, prefix: prefix, date: date, collector: collector);
   var maxSeq = 0;
   for (final code in existingCodes) {
     final m = re.firstMatch(code);
@@ -73,12 +80,14 @@ String nextSampleCode({
   required String pattern,
   required String prefix,
   required DateTime date,
+  String collector = '',
 }) {
   final codes = existingCodes.toSet();
   var seq = nextSequence(
-      existingCodes: codes, pattern: pattern, prefix: prefix, date: date);
+      existingCodes: codes, pattern: pattern, prefix: prefix, date: date, collector: collector);
   // Se o padrão não tem {SEQ}, evita colisão acrescentando sufixo.
-  var code = formatSampleCode(pattern: pattern, prefix: prefix, date: date, sequence: seq);
+  var code = formatSampleCode(
+      pattern: pattern, prefix: prefix, date: date, sequence: seq, collector: collector);
   if (!RegExp(r'\{SEQ\d*\}').hasMatch(pattern)) {
     var n = 2;
     final base = code;
@@ -88,7 +97,37 @@ String nextSampleCode({
     return code;
   }
   while (codes.contains(code)) {
-    code = formatSampleCode(pattern: pattern, prefix: prefix, date: date, sequence: ++seq);
+    code = formatSampleCode(
+        pattern: pattern, prefix: prefix, date: date, sequence: ++seq, collector: collector);
   }
   return code;
+}
+
+/// Código de coletor a partir do nome: iniciais do primeiro e do último
+/// nome, sem acentos ("Ana Souza" -> "AS"; "Marina" -> "MA").
+String collectorInitials(String name) {
+  const from = 'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ';
+  const to = 'AAAAAEEEEIIIIOOOOOUUUUCN';
+  final words = name
+      .toUpperCase()
+      .split(RegExp(r'\s+'))
+      .where((w) => w.isNotEmpty && !const {'DA', 'DE', 'DO', 'DAS', 'DOS', 'E'}.contains(w))
+      .toList();
+  String clean(String s) => [
+        for (final ch in s.split(''))
+          if (from.contains(ch)) to[from.indexOf(ch)] else if (RegExp('[A-Z0-9]').hasMatch(ch)) ch,
+      ].join();
+  if (words.isEmpty) return '';
+  if (words.length == 1) {
+    final w = clean(words.first);
+    return w.length <= 2 ? w : w.substring(0, 2);
+  }
+  final first = clean(words.first), last = clean(words.last);
+  return '${first.isEmpty ? '' : first[0]}${last.isEmpty ? '' : last[0]}';
+}
+
+/// Normaliza o código digitado pelo usuário: 1 a 4 letras/números, maiúsculo.
+String normalizeCollectorCode(String code) {
+  final c = code.toUpperCase().replaceAll(RegExp('[^A-Z0-9]'), '');
+  return c.length > 4 ? c.substring(0, 4) : c;
 }

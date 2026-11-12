@@ -1,11 +1,13 @@
 // Provedores Riverpod: injeção de dependências e estado compartilhado.
 
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/db/database.dart';
 import 'data/repositories/sample_repository.dart';
 import 'data/repositories/settings_repository.dart';
 import 'data/repositories/template_repository.dart';
+import 'domain/geo.dart';
 import 'domain/models.dart';
 import 'domain/sample_filter.dart';
 import 'services/export/export_service.dart';
@@ -24,6 +26,9 @@ final sampleRepoProvider = Provider((ref) => SampleRepository(ref.watch(database
 final templateRepoProvider = Provider((ref) => TemplateRepository(ref.watch(databaseProvider)));
 final settingsRepoProvider = Provider((ref) => SettingsRepository(ref.watch(databaseProvider)));
 
+/// Limites IBGE (assets/geo), carregados sob demanda e mantidos em cache.
+final geoLibraryProvider = Provider((ref) => GeoLibrary(rootBundle.loadString));
+
 final photoServiceProvider = Provider((ref) => PhotoService());
 final locationServiceProvider = Provider((ref) => LocationService());
 final geocodingServiceProvider = Provider((ref) => GeocodingService());
@@ -33,6 +38,7 @@ final exportServiceProvider = Provider((ref) => ExportService(
       settings: ref.watch(settingsRepoProvider),
       photos: ref.watch(photoServiceProvider),
       db: ref.watch(databaseProvider),
+      geo: ref.watch(geoLibraryProvider),
     ));
 
 final samplesProvider = StreamProvider<List<Sample>>((ref) => ref.watch(sampleRepoProvider).watchAll());

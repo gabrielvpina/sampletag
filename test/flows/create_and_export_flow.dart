@@ -46,10 +46,16 @@ Future<String> createSampleThroughUi(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('new-sample')));
   await settle(tester);
 
+  // Primeira amostra sem coletor configurado: o app pede o código {COLETOR}.
+  expect(find.text('Código do coletor'), findsOneWidget);
+  await tester.enterText(find.byKey(const Key('collector-code-field')), 'as');
+  await tester.tap(find.text('Salvar'));
+  await settle(tester);
+
   // Modelo único (Cacau) já vem selecionado e o código é gerado.
   final codeField = tester.widget<TextFormField>(find.byKey(const Key('code-field')));
   final code = codeField.controller!.text;
-  expect(code, matches(RegExp(r'^CAC-\d{4}-0001$')));
+  expect(code, matches(RegExp(r'^CAC-AS-\d{4}-0001$')));
 
   // Salvar sem o campo obrigatório "Tecido coletado" mostra erro.
   await tester.tap(find.byKey(const Key('save-sample')));

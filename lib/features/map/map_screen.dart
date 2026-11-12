@@ -51,12 +51,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             maxZoom: 19,
           ),
           children: [
-            osmTileLayer(),
+            ...baseMapLayers(ref.watch(mapGeoProvider).value),
             MarkerLayer(markers: [
               for (final s in samples)
                 sampleMarker(s, templates[s.templateId], onTap: () => _showSample(s, templates[s.templateId])),
             ]),
-            const SimpleAttributionWidget(source: Text('OpenStreetMap')),
+            const SimpleAttributionWidget(source: Text('OpenStreetMap · limites: IBGE')),
           ],
         ),
         if (filtered)

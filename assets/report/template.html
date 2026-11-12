@@ -55,8 +55,10 @@ h2{font-size:19px;margin:0 0 12px}
 .seg button{border-radius:0;background:transparent;color:var(--primary);min-height:36px;padding:6px 14px}
 .seg button[aria-pressed=true]{background:var(--primary);color:var(--primary-ink)}
 .notice{font-size:13px;color:var(--warn)}
-#map{height:min(62vh,520px);background:#E4E7DD}
-#svgmap{display:none;background:#F2F4EC}
+#map{height:min(62vh,520px);background:#DCE5EA}
+.leaflet-control-layers{font-size:13px}
+.leaflet-control-layers label{display:flex;gap:6px;align-items:center;min-height:30px}
+#svgmap{display:none;background:#DCE5EA}
 #svgmap svg{display:block;width:100%;height:auto}
 #svgmap .pt{cursor:pointer}
 #svgmap .pt.active circle{stroke:#000;stroke-width:3}
@@ -149,7 +151,7 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
       <div class="map-bar">
         <div class="seg" role="group" aria-label="Tipo de mapa">
           <button type="button" id="mode-live" aria-pressed="true">Interativo</button>
-          <button type="button" id="mode-svg" aria-pressed="false">Simplificado (offline)</button>
+          <button type="button" id="mode-svg" aria-pressed="false">Estático (impressão)</button>
         </div>
         <span class="notice" id="map-notice" role="status">{{MAP_NOTICE}}</span>
       </div>
@@ -181,10 +183,11 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
     <div class="sheets">{{SHEETS}}</div>
   </section>
 
-  <footer>Gerado pelo SampleTag em {{GENERATED_AT}}. Arquivo autocontido: funciona offline; o mapa interativo usa tiles do OpenStreetMap quando há internet.</footer>
+  <footer>Gerado pelo SampleTag em {{GENERATED_AT}}. Arquivo autocontido: funciona offline; limites territoriais: IBGE; o fundo OpenStreetMap é opcional e exige internet.</footer>
 </main>
 
 <script type="application/json" id="samples-data">{{DATA_JSON}}</script>
+<script type="application/json" id="geo-data">{{GEO_JSON}}</script>
 <script>{{LEAFLET_JS}}</script>
 <script>
 (function(){
@@ -220,7 +223,24 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
       '<div><a href="#sheet-'+i+'">Ver ficha</a></div></div>';
   }
 
-  /* ---------- Mapa interativo (Leaflet) com fallback SVG ---------- */
+  /* ---------- Mapa interativo (Leaflet) ----------
+   * Fundo padrão: limites do IBGE embutidos (funciona sem internet e
+   * abrindo o arquivo direto do disco). OpenStreetMap é camada opcional. */
+  var GEO = {};
+  try { GEO = JSON.parse(document.getElementById('geo-data').textContent) || {}; } catch (e) {}
+  // Anéis vêm no formato "polyline" (deltas inteiros); ver lib/domain/geo.dart.
+  function decodeRing(str, scale){
+    var i = 0, lat = 0, lon = 0, out = [];
+    function next(){ var r = 0, sh = 0, c; do { c = str.charCodeAt(i++) - 63; r |= (c & 31) << sh; sh += 5; } while (c >= 32); return (r & 1) ? ~(r >> 1) : (r >> 1); }
+    while (i < str.length) { lat += next(); lon += next(); out.push([lon/scale, lat/scale]); }
+    return out;
+  }
+  function toGeoJson(list){
+    var scale = Math.pow(10, GEO.precision || 4);
+    return {type:'FeatureCollection', features:(list || []).map(function(f){
+      return {type:'Feature', properties:f, geometry:{type:'MultiPolygon', coordinates:f.p.map(function(poly){ return poly.map(function(r){ return decodeRing(r, scale); }); })}};
+    })};
+  }
   var pts = [];
   S.forEach(function(s, i){ if (s.latitude != null && s.longitude != null) pts.push({i:i, lat:s.latitude, lon:s.longitude, color:s.color}); });
   var map = null, layer = null, mode = 'live';
@@ -236,8 +256,8 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
     if (msg != null) notice.textContent = msg;
     if (m === 'live' && map) setTimeout(function(){ map.invalidateSize(); }, 0);
   }
-  btnLive.onclick = function(){ if (map) setMode('live', ''); else setMode('svg', 'Mapa interativo indisponível.'); };
-  btnSvg.onclick = function(){ setMode('svg', ''); };
+  btnLive.onclick = function(){ if (map) setMode('live'); else setMode('svg', 'Mapa interativo indisponível neste navegador.'); };
+  btnSvg.onclick = function(){ setMode('svg'); };
 
   function renderMarkers(){
     if (!map) return;
@@ -254,7 +274,7 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
       var g = cells[k];
       if (g.length === 1) {
         var p = g[0];
-        L.circleMarker([p.lat, p.lon], {radius:9, color:'#fff', weight:2, fillColor:p.color, fillOpacity:.95})
+        L.circleMarker([p.lat, p.lon], {pane:'samples', radius:9, color:'#fff', weight:2.5, fillColor:p.color, fillOpacity:1})
           .bindPopup(function(){ return popupHtml(p.i); })
           .on('click', function(){ highlightRow(p.i, true); })
           .addTo(layer);
@@ -269,27 +289,42 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
   }
 
   function initLeaflet(){
-    if (typeof L === 'undefined' || !pts.length) return false;
-    map = L.map('map', {preferCanvas:true, worldCopyJump:true});
-    var loaded = 0, failed = 0;
-    var tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: '&copy; colaboradores do OpenStreetMap'
-    }).on('tileload', function(){ loaded++; }).on('tileerror', function(){ failed++; }).addTo(map);
+    var states = GEO.states && GEO.states.length ? toGeoJson(GEO.states) : null;
+    var muns = GEO.municipalities && GEO.municipalities.length ? toGeoJson(GEO.municipalities) : null;
+    if (typeof L === 'undefined' || (!pts.length && !states)) return false;
+    map = L.map('map', {zoomSnap:0.5, maxZoom:18});
+    // Panes garantem a ordem: preenchimento < tiles online < limites < amostras.
+    map.createPane('geoFill').style.zIndex = 150;
+    map.createPane('geoLines').style.zIndex = 380;
+    map.createPane('samples').style.zIndex = 450;
+    var offline = L.layerGroup();
+    var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; colaboradores do OpenStreetMap'});
+    var overlays = {};
+    if (states) {
+      L.geoJSON(states, {pane:'geoFill', interactive:false, style:function(f){
+        return {stroke:false, fillColor: f.properties.h ? '#FBFBF5' : '#ECEEE6', fillOpacity:1};
+      }}).addTo(offline);
+    }
+    if (muns) {
+      overlays['Limites municipais'] = L.geoJSON(muns, {pane:'geoLines', style:{color:'#9AA394', weight:0.8, opacity:.9, fill:true, fillOpacity:0},
+        onEachFeature:function(f, l){ l.bindTooltip(esc(f.properties.n), {sticky:true, direction:'top'}); }}).addTo(map);
+    }
+    if (states) {
+      overlays['Limites estaduais'] = L.geoJSON(states, {pane:'geoLines', interactive:false, style:{color:'#6F7A6D', weight:1.8, fill:false}}).addTo(map);
+    }
+    offline.addTo(map);
+    L.control.layers({'Limites IBGE (offline)': offline, 'OpenStreetMap (internet)': osm}, overlays, {collapsed:false, position:'topright'}).addTo(map);
+    L.control.scale({imperial:false}).addTo(map);
     layer = L.layerGroup().addTo(map);
-    var b = L.latLngBounds(pts.map(function(p){ return [p.lat, p.lon]; }));
-    map.fitBounds(b, {padding:[40,40], maxZoom:15});
+    var b;
+    if (pts.length) b = L.latLngBounds(pts.map(function(p){ return [p.lat, p.lon]; }));
+    else L.geoJSON(states, {filter:function(f){ return f.properties.h; }}).eachLayer(function(l){ b = b ? b.extend(l.getBounds()) : l.getBounds(); });
+    if (b) map.fitBounds(b, {padding:[40,40], maxZoom:12}); else map.setView([-14.2, -51.9], 4);
     map.on('zoomend', renderMarkers);
     renderMarkers();
-    // Sem internet os tiles falham: troca para o mapa SVG embutido.
-    function checkTiles(){
-      if (loaded === 0 && mode === 'live') setMode('svg', 'Sem conexão com o servidor de mapas: exibindo mapa simplificado.');
-    }
-    if (navigator.onLine === false) setMode('svg', 'Sem internet: exibindo mapa simplificado.');
-    else setTimeout(checkTiles, 7000);
-    tiles.on('tileerror', function(){ if (failed > 6 && loaded === 0) checkTiles(); });
     return true;
   }
-  if (!initLeaflet()) setMode('svg', pts.length ? 'Mapa interativo indisponível.' : 'Nenhuma amostra com coordenadas.');
+  if (!initLeaflet()) setMode('svg', pts.length ? 'Mapa interativo indisponível neste navegador.' : 'Nenhuma amostra com coordenadas.');
 
   // Pontos do mapa SVG: clique leva à linha/ficha.
   Array.prototype.forEach.call(document.querySelectorAll('#svgmap .pt'), function(el){

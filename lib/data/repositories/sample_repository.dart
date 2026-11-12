@@ -55,13 +55,14 @@ class SampleRepository {
     required String pattern,
     required String prefix,
     required DateTime date,
+    String collector = '',
   }) async {
     final codes = await (_db.selectOnly(_db.samples)
           ..addColumns([_db.samples.sampleCode]))
         .map((r) => r.read(_db.samples.sampleCode)!)
         .get();
     return nextSampleCode(
-        existingCodes: codes, pattern: pattern, prefix: prefix, date: date);
+        existingCodes: codes, pattern: pattern, prefix: prefix, date: date, collector: collector);
   }
 
   /// Insere ou atualiza (pelo `id`).

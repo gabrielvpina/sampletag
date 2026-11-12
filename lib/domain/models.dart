@@ -6,6 +6,8 @@
 
 import 'dart:convert';
 
+import 'sample_code.dart';
+
 /// Categoria da amostra.
 enum SampleCategory {
   biological('biologica', 'Biológica'),
@@ -351,12 +353,16 @@ class AppSettings {
     this.collectorContact = '',
     this.project = '',
     this.idPattern = defaultIdPattern,
+    this.collectorCode = '',
     this.themeMode = 'system',
+    this.mapStates = const {},
+    this.municipalBoundaries = true,
   });
 
-  /// Padrão do código legível. Tokens: `{PREFIXO}`, `{AAAA}`, `{AA}`,
-  /// `{MM}`, `{SEQ}` (4 dígitos) ou `{SEQn}` (n dígitos).
-  static const defaultIdPattern = '{PREFIXO}-{AAAA}-{SEQ4}';
+  /// Padrão do código legível. Tokens: `{PREFIXO}`, `{COLETOR}`, `{AAAA}`,
+  /// `{AA}`, `{MM}`, `{DD}`, `{SEQ}` (4 dígitos) ou `{SEQn}` (n dígitos).
+  /// `{COLETOR}` garante que celulares diferentes não gerem o mesmo código.
+  static const defaultIdPattern = '{PREFIXO}-{COLETOR}-{AAAA}-{SEQ4}';
 
   final String collectorName;
   final String collectorContact;
@@ -365,22 +371,48 @@ class AppSettings {
   final String project;
   final String idPattern;
 
+  /// Código curto do coletor/aparelho usado em `{COLETOR}` (ex.: AS).
+  final String collectorCode;
+
+  /// Valor efetivo de `{COLETOR}`: o código configurado ou, se vazio, as
+  /// iniciais do nome do coletor.
+  String get collectorTag =>
+      collectorCode.isNotEmpty ? normalizeCollectorCode(collectorCode) : collectorInitials(collectorName);
+
+  /// O padrão usa `{COLETOR}`, mas ainda não há código nem nome.
+  bool get needsCollectorCode => idPattern.contains('{COLETOR}') && collectorTag.isEmpty;
+
   /// 'system' | 'light' | 'dark'.
   final String themeMode;
+
+  /// País da coleta. Por enquanto só há limites do Brasil.
+  static const country = 'Brasil';
+
+  /// UFs escolhidas para o mapa base, além das que aparecem nas amostras.
+  final Set<String> mapStates;
+
+  /// Mostrar limites municipais (IBGE) das UFs em destaque.
+  final bool municipalBoundaries;
 
   AppSettings copyWith({
     String? collectorName,
     String? collectorContact,
     String? project,
     String? idPattern,
+    String? collectorCode,
     String? themeMode,
+    Set<String>? mapStates,
+    bool? municipalBoundaries,
   }) =>
       AppSettings(
         collectorName: collectorName ?? this.collectorName,
         collectorContact: collectorContact ?? this.collectorContact,
         project: project ?? this.project,
         idPattern: idPattern ?? this.idPattern,
+        collectorCode: collectorCode ?? this.collectorCode,
         themeMode: themeMode ?? this.themeMode,
+        mapStates: mapStates ?? this.mapStates,
+        municipalBoundaries: municipalBoundaries ?? this.municipalBoundaries,
       );
 
   Map<String, String> toMap() => {
@@ -388,7 +420,10 @@ class AppSettings {
         'collectorContact': collectorContact,
         'project': project,
         'idPattern': idPattern,
+        'collectorCode': collectorCode,
         'themeMode': themeMode,
+        'mapStates': (mapStates.toList()..sort()).join(','),
+        'municipalBoundaries': municipalBoundaries ? '1' : '0',
       };
 
   factory AppSettings.fromMap(Map<String, String> m) => AppSettings(
@@ -396,6 +431,12 @@ class AppSettings {
         collectorContact: m['collectorContact'] ?? '',
         project: m['project'] ?? '',
         idPattern: (m['idPattern']?.isNotEmpty ?? false) ? m['idPattern']! : defaultIdPattern,
+        collectorCode: m['collectorCode'] ?? '',
         themeMode: m['themeMode'] ?? 'system',
+        mapStates: {
+          for (final u in (m['mapStates'] ?? '').split(','))
+            if (u.trim().isNotEmpty) u.trim().toUpperCase(),
+        },
+        municipalBoundaries: m['municipalBoundaries'] != '0',
       );
 }

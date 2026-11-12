@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import '../../core/format.dart';
+import '../../domain/geo.dart';
 import '../../domain/models.dart';
 import 'qr_payload.dart';
 import 'qr_svg.dart';
@@ -25,6 +26,7 @@ class ReportInput {
     required this.leafletCss,
     this.thumbnails = const {},
     this.title,
+    this.geo,
   });
 
   final List<Sample> samples;
@@ -40,6 +42,9 @@ class ReportInput {
   /// Miniaturas JPEG em base64 por id da amostra (vazio = sem fotos).
   final Map<String, List<String>> thumbnails;
   final String? title;
+
+  /// Limites de estados/municípios para o mapa base offline.
+  final ReportGeo? geo;
 }
 
 /// Escapa texto para conteúdo e atributos HTML.
@@ -106,7 +111,7 @@ class HtmlReportBuilder {
       'META': _meta(samples, input),
       'STATS': _stats(samples, templates),
       'MAP_NOTICE': escapeHtml(_mapNotice(samples)),
-      'SVG_MAP': buildSvgMap(samples, templates),
+      'SVG_MAP': buildSvgMap(samples, templates, geo: input.geo),
       'LEGEND': _legend(samples, templates),
       'TEMPLATE_OPTIONS': _templateOptions(samples, templates),
       'TABLE_HEAD': _tableHead(customFields),
@@ -114,6 +119,7 @@ class HtmlReportBuilder {
       'SHEETS': _sheets(samples, templates, input.thumbnails),
       'GENERATED_AT': escapeHtml(fmtDateTime(input.generatedAt)),
       'DATA_JSON': jsonForScript(_data(samples, templates, input)),
+      'GEO_JSON': jsonForScript(input.geo?.toJson() ?? const {}),
       'LEAFLET_JS': _rawTextSafe(input.leafletJs, 'script'),
       'LEAFLET_CSS': _rawTextSafe(input.leafletCss, 'style'),
     };
@@ -359,22 +365,32 @@ class HtmlReportBuilder {
   /// os pontos coloridos por modelo. A projeção é equiretangular com
   /// paralelo-padrão na latitude média (x = lon·cos φ0, y = lat), o que evita
   /// distorção visível em áreas pequenas.
-  String buildSvgMap(List<Sample> samples, Map<String, SampleTemplate> templates) {
+  String buildSvgMap(List<Sample> samples, Map<String, SampleTemplate> templates, {ReportGeo? geo}) {
     final pts = <(int, Sample)>[
       for (var i = 0; i < samples.length; i++)
         if (samples[i].hasLocation) (i, samples[i]),
     ];
-    if (pts.isEmpty) {
+    // Sem pontos, enquadra as UFs em destaque (se houver).
+    final focus = geo?.states.where((st) => geo.highlighted.contains(st.id)).toList() ?? const <GeoFeature>[];
+    if (pts.isEmpty && focus.isEmpty) {
       return '<div class="empty">Nenhuma amostra com coordenadas.</div>';
     }
 
-    var minLat = pts.map((p) => p.$2.latitude!).reduce(math.min);
-    var maxLat = pts.map((p) => p.$2.latitude!).reduce(math.max);
-    var minLon = pts.map((p) => p.$2.longitude!).reduce(math.min);
-    var maxLon = pts.map((p) => p.$2.longitude!).reduce(math.max);
+    double minLat, maxLat, minLon, maxLon;
+    if (pts.isNotEmpty) {
+      minLat = pts.map((p) => p.$2.latitude!).reduce(math.min);
+      maxLat = pts.map((p) => p.$2.latitude!).reduce(math.max);
+      minLon = pts.map((p) => p.$2.longitude!).reduce(math.min);
+      maxLon = pts.map((p) => p.$2.longitude!).reduce(math.max);
+    } else {
+      minLat = focus.map((f) => f.bounds.minLat).reduce(math.min);
+      maxLat = focus.map((f) => f.bounds.maxLat).reduce(math.max);
+      minLon = focus.map((f) => f.bounds.minLon).reduce(math.min);
+      maxLon = focus.map((f) => f.bounds.maxLon).reduce(math.max);
+    }
 
-    // Garante extensão mínima (~1 km) e margem de 12%.
-    const minSpan = 0.01;
+    // Garante extensão mínima (~5 km, para dar contexto) e margem de 12%.
+    const minSpan = 0.05;
     double padSpan(double lo, double hi) => math.max(hi - lo, minSpan);
     final latSpan0 = padSpan(minLat, maxLat), lonSpan0 = padSpan(minLon, maxLon);
     final cLat = (minLat + maxLat) / 2, cLon = (minLon + maxLon) / 2;
@@ -406,7 +422,59 @@ class HtmlReportBuilder {
     final b = StringBuffer()
       ..write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${f(width)} ${f(height)}" '
           'role="img" aria-label="Mapa simplificado das amostras" font-family="system-ui,sans-serif">')
-      ..write('<rect width="100%" height="100%" fill="#F2F4EC"/>');
+      ..write('<rect width="100%" height="100%" fill="#DCE5EA"/>');
+
+    // Limites IBGE: só as áreas que aparecem no enquadramento.
+    if (geo != null) {
+      final view = GeoBounds(minLon, minLat, maxLon, maxLat);
+      String path(GeoFeature feat) {
+        final d = StringBuffer();
+        for (final poly in feat.polygons) {
+          for (final ring in poly) {
+            double? lx, ly;
+            var n = 0;
+            for (final p in ring) {
+              final px = x(p.lon), py = y(p.lat);
+              // Pula pontos a menos de ~0,7 unidade do anterior.
+              if (lx != null && (px - lx).abs() < 0.7 && (py - ly!).abs() < 0.7) continue;
+              d.write(n == 0 ? 'M' : 'L');
+              d.write('${f(px)} ${f(py)}');
+              lx = px;
+              ly = py;
+              n++;
+            }
+            if (n > 0) d.write('Z');
+          }
+        }
+        return d.toString();
+      }
+
+      final visibleStates = geo.states.where((st) => st.bounds.intersects(view)).toList();
+      b.write('<g fill-rule="evenodd">');
+      for (final st in visibleStates) {
+        final hl = geo.highlighted.contains(st.id);
+        b.write('<path d="${path(st)}" fill="${hl ? '#FBFBF5' : '#ECEEE6'}"/>');
+      }
+      b.write('</g><g fill="none" stroke="#BCC3B6" stroke-width="0.7">');
+      for (final m in geo.municipalities.where((m) => m.bounds.intersects(view))) {
+        b.write('<path d="${path(m)}"><title>${escapeHtml(m.name)}</title></path>');
+      }
+      b.write('</g><g fill="none" stroke="#7C877A" stroke-width="1.6" stroke-linejoin="round">');
+      for (final st in visibleStates) {
+        b.write('<path d="${path(st)}"/>');
+      }
+      b.write('</g>');
+      // Rótulos das UFs no centro do enquadramento de cada uma (se couber).
+      b.write('<g fill="#7C877A" font-size="15" font-weight="700" text-anchor="middle" opacity=".55">');
+      for (final st in visibleStates) {
+        final cx = x(((st.bounds.minLon + st.bounds.maxLon) / 2).clamp(minLon, maxLon));
+        final cy = y(((st.bounds.minLat + st.bounds.maxLat) / 2).clamp(minLat, maxLat));
+        if (cx > 40 && cx < width - 40 && cy > 30 && cy < height - 30) {
+          b.write('<text x="${f(cx)}" y="${f(cy)}">${escapeHtml(st.id)}</text>');
+        }
+      }
+      b.write('</g>');
+    }
 
     // Grade com passo "redondo" (1, 2, 5 × 10^n graus).
     final step = _niceStep((maxLon - minLon) / 6);

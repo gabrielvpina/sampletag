@@ -7,6 +7,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/widgets.dart';
 import '../../domain/models.dart';
 import '../../providers.dart';
+import '../../services/export/export_service.dart';
+import 'import_screen.dart';
 
 /// Exportações: relatório HTML, CSV, KML, backup ZIP e restauração.
 class ExportScreen extends ConsumerStatefulWidget {
@@ -64,6 +66,27 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     } finally {
       if (mounted) setState(() => _busy = null);
     }
+  }
+
+  /// Juntar dados: escolhe o ZIP recebido de outro celular e abre a prévia.
+  Future<void> _importFromOther() async {
+    final files = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: const ['zip']);
+    if (files.isEmpty || !mounted) return;
+    setState(() => _busy = 'import');
+    ImportPreview? preview;
+    try {
+      preview = await ref.read(exportServiceProvider).previewImport(await files.first.readAsBytes());
+    } on Object catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+    if (preview == null || !mounted) return;
+    final result = await Navigator.push<ImportResult>(
+      context,
+      MaterialPageRoute(builder: (_) => ImportScreen(preview: preview!)),
+    );
+    if (result != null && mounted) showMessage(context, result.summary);
   }
 
   @override
@@ -151,21 +174,37 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           onTap: () => _run('kml', svc.kml, 'application/vnd.google-earth.kml+xml'),
         ),
         const SizedBox(height: 24),
+        Text('Juntar dados da equipe', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(
+          'Cada coletor cria o backup abaixo e envia o ZIP a quem vai juntar os dados. '
+          'Quem junta usa "Importar coleta" para cada arquivo recebido e depois gera o relatório.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        action(
+          id: 'import',
+          icon: Icons.group_add_outlined,
+          title: 'Importar coleta de outro celular',
+          subtitle: 'Mostra uma prévia, trata códigos repetidos e não altera suas configurações.',
+          onTap: _importFromOther,
+        ),
+        const SizedBox(height: 24),
         Text('Backup', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         action(
           id: 'backup',
           icon: Icons.archive_outlined,
           title: 'Criar backup (ZIP)',
-          subtitle: 'Banco de dados completo + todas as fotos. Sempre inclui todas as amostras.',
+          subtitle: 'Todas as amostras, modelos e fotos. Use para guardar uma cópia ou enviar sua coleta.',
           onTap: () => _run('backup', (_) => svc.backup(), 'application/zip'),
         ),
         const SizedBox(height: 8),
         action(
           id: 'restore',
           icon: Icons.unarchive_outlined,
-          title: 'Restaurar backup',
-          subtitle: 'Importa um ZIP gerado pelo SampleTag.',
+          title: 'Restaurar backup deste aparelho',
+          subtitle: 'Recupera uma cópia sua, incluindo as configurações.',
           onTap: _restore,
         ),
         const SizedBox(height: 16),

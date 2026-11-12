@@ -110,7 +110,7 @@ class SampleDetailScreen extends ConsumerWidget {
                         interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
                       ),
                       children: [
-                        osmTileLayer(),
+                        ...baseMapLayers(ref.watch(mapGeoProvider).value),
                         MarkerLayer(markers: [sampleMarker(s, t)]),
                       ],
                     ),

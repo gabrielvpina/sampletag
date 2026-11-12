@@ -23,6 +23,30 @@ void main() {
     });
   });
 
+  group('{COLETOR}', () {
+    const p = '{PREFIXO}-{COLETOR}-{AAAA}-{SEQ4}';
+
+    test('entra no código e separa a numeração por coletor', () {
+      expect(formatSampleCode(pattern: p, prefix: 'CAC', date: date, sequence: 1, collector: 'as'), 'CAC-AS-2026-0001');
+      final codes = ['CAC-AS-2026-0001', 'CAC-AS-2026-0002', 'CAC-JL-2026-0009'];
+      expect(nextSampleCode(existingCodes: codes, pattern: p, prefix: 'CAC', date: date, collector: 'AS'), 'CAC-AS-2026-0003');
+      expect(nextSampleCode(existingCodes: codes, pattern: p, prefix: 'CAC', date: date, collector: 'JL'), 'CAC-JL-2026-0010');
+      expect(nextSampleCode(existingCodes: codes, pattern: p, prefix: 'CAC', date: date, collector: 'MC'), 'CAC-MC-2026-0001');
+    });
+
+    test('iniciais a partir do nome, sem acentos nem preposições', () {
+      expect(collectorInitials('Ana Souza'), 'AS');
+      expect(collectorInitials('João da Silva Lima'), 'JL');
+      expect(collectorInitials('Ângela'), 'AN');
+      expect(collectorInitials('  '), '');
+    });
+
+    test('código digitado é normalizado', () {
+      expect(normalizeCollectorCode(' a-s1x9 '), 'AS1X');
+      expect(normalizeCollectorCode('é'), '');
+    });
+  });
+
   group('nextSampleCode', () {
     test('primeira amostra', () {
       expect(nextSampleCode(existingCodes: const [], pattern: pattern, prefix: 'CAC', date: date), 'CAC-2026-0001');
