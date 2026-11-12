@@ -1,0 +1,18 @@
+{
+  "@@locale": "pt",
+  "appTitle": "SampleTag",
+  "navSamples": "Amostras",
+  "navMap": "Mapa",
+  "navScan": "Escanear",
+  "navExport": "Exportar",
+  "navSettings": "Ajustes",
+  "newSample": "Nova amostra",
+  "editSample": "Editar amostra",
+  "save": "Salvar",
+  "cancel": "Cancelar",
+  "delete": "Excluir",
+  "sampleCount": "{count, plural, =0{Nenhuma amostra} =1{1 amostra} other{{count} amostras}}",
+  "@sampleCount": {
+    "placeholders": { "count": { "type": "int" } }
+  }
+}

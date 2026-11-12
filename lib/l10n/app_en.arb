@@ -1,0 +1,15 @@
+{
+  "@@locale": "en",
+  "appTitle": "SampleTag",
+  "navSamples": "Samples",
+  "navMap": "Map",
+  "navScan": "Scan",
+  "navExport": "Export",
+  "navSettings": "Settings",
+  "newSample": "New sample",
+  "editSample": "Edit sample",
+  "save": "Save",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "sampleCount": "{count, plural, =0{No samples} =1{1 sample} other{{count} samples}}"
+}

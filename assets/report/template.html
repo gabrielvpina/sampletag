@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="SampleTag">
+<title>{{TITLE}}</title>
+<style>{{LEAFLET_CSS}}</style>
+<style>
+:root{
+  --primary:#3D5C40;--primary-ink:#ffffff;--secondary:#A8B08C;--secondary-soft:#E9ECDD;
+  --bg:#F6F7F2;--surface:#ffffff;--ink:#1D241E;--muted:#5B665C;--line:#D9DDCF;
+  --row-hover:#EEF1E6;--row-active:#DCE4CF;--warn:#9A5B00;
+  --radius:12px;--shadow:0 1px 3px rgba(0,0,0,.08),0 4px 14px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --primary:#8FB894;--primary-ink:#0F1A10;--secondary:#A8B08C;--secondary-soft:#2A3029;
+    --bg:#121512;--surface:#1B1F1B;--ink:#E7EBE3;--muted:#A4ADA3;--line:#343B34;
+    --row-hover:#232923;--row-active:#2E3A2F;--warn:#F0B35A;
+    --shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+a{color:var(--primary)}
+.wrap{max-width:1200px;margin:0 auto;padding:0 16px 48px}
+header.top{background:#3D5C40;color:#fff;padding:20px 0 18px}
+header.top .wrap{padding-bottom:0}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em;font-size:13px;text-transform:uppercase;opacity:.9}
+.brand-mark{width:22px;height:22px;border-radius:6px;background:#A8B08C;display:inline-grid;place-items:center;color:#3D5C40;font-weight:800;font-size:13px}
+h1{margin:6px 0 4px;font-size:clamp(22px,4vw,30px);line-height:1.2}
+.meta{display:flex;flex-wrap:wrap;gap:4px 20px;font-size:14px;opacity:.92}
+.meta b{font-weight:600}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+button,.btn{font:inherit;font-weight:600;border:0;border-radius:999px;padding:10px 18px;min-height:44px;cursor:pointer;background:#A8B08C;color:#1D241E}
+button:hover{filter:brightness(1.05)}
+button.ghost{background:transparent;color:inherit;border:1.5px solid currentColor}
+button:focus-visible,input:focus-visible,select:focus-visible,tr:focus-visible{outline:3px solid #A8B08C;outline-offset:2px}
+section{margin-top:24px}
+h2{font-size:19px;margin:0 0 12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.stat{padding:14px 16px}
+.stat h3{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.big{font-size:34px;font-weight:700;line-height:1.1;color:var(--primary)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--secondary-soft);border-radius:999px;padding:3px 10px;font-size:13px}
+.chip b{font-variant-numeric:tabular-nums}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none;border:1px solid rgba(0,0,0,.25)}
+.map-card{overflow:hidden}
+.map-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--line)}
+.seg{display:inline-flex;border:1.5px solid var(--primary);border-radius:999px;overflow:hidden}
+.seg button{border-radius:0;background:transparent;color:var(--primary);min-height:36px;padding:6px 14px}
+.seg button[aria-pressed=true]{background:var(--primary);color:var(--primary-ink)}
+.notice{font-size:13px;color:var(--warn)}
+#map{height:min(62vh,520px);background:#E4E7DD}
+#svgmap{display:none;background:#F2F4EC}
+#svgmap svg{display:block;width:100%;height:auto}
+#svgmap .pt{cursor:pointer}
+#svgmap .pt.active circle{stroke:#000;stroke-width:3}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;padding:10px 12px;font-size:13px;border-top:1px solid var(--line)}
+.leaflet-popup-content{margin:10px 12px;font-size:13px;line-height:1.4;min-width:180px}
+.pop-code{font-weight:700;font-size:14px}
+.pop img{display:block;max-width:180px;max-height:140px;border-radius:6px;margin-top:6px}
+.cluster{background:#3D5C40;color:#fff;border:3px solid #A8B08C;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.toolbar input,.toolbar select{font:inherit;min-height:44px;padding:8px 12px;border-radius:10px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink)}
+.toolbar input{flex:1 1 240px}
+.count{color:var(--muted);font-size:14px}
+.table-wrap{overflow:auto;max-height:70vh}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap}
+td.wrap-text{white-space:normal;min-width:200px}
+th{position:sticky;top:0;background:var(--surface);z-index:1;cursor:pointer;user-select:none;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+th[aria-sort=ascending]::after{content:" ▲"}
+th[aria-sort=descending]::after{content:" ▼"}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--row-hover)}
+tbody tr.active{background:var(--row-active)}
+td.num{font-variant-numeric:tabular-nums;text-align:right}
+.sheets{display:grid;gap:18px}
+.sheet{overflow:hidden;break-inside:avoid}
+.sheet-head{background:var(--tpl,#3D5C40);color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.sheet-head .t{font-weight:800;letter-spacing:.04em}
+.sheet-head .c{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:700;background:rgba(255,255,255,.18);padding:2px 10px;border-radius:999px}
+.sheet-body{display:grid;grid-template-columns:1fr auto;gap:16px;padding:14px 16px}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px 18px;margin:0}
+.fields div{min-width:0}
+.fields dt{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.fields dd{margin:0;font-weight:500;overflow-wrap:anywhere}
+.qr{text-align:center;font-size:11px;color:var(--muted)}
+.qr svg{border:1px solid var(--line);border-radius:6px}
+.photos{display:flex;flex-wrap:wrap;gap:8px;padding:0 16px 14px}
+.photos img{height:150px;max-width:100%;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.notes{padding:0 16px 12px;white-space:pre-wrap}
+.storage{background:var(--secondary);color:#1D241E;padding:8px 16px;font-weight:700;font-size:14px}
+.empty{padding:24px;text-align:center;color:var(--muted)}
+footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (max-width:640px){
+  .sheet-body{grid-template-columns:1fr}
+  .qr{justify-self:start}
+  th,td{padding:8px}
+}
+@media print{
+  @page{margin:12mm}
+  body{background:#fff;color:#000;font-size:11pt}
+  header.top{background:#fff!important;color:#000;border-bottom:3px solid #3D5C40}
+  .actions,.toolbar,.map-bar .seg,#map,.no-print{display:none!important}
+  #svgmap{display:block!important;background:#fff}
+  .card{box-shadow:none;border-color:#bbb}
+  .table-wrap{max-height:none;overflow:visible}
+  table{font-size:8pt}
+  th,td{white-space:normal;padding:3px 4px}
+  th{position:static}
+  tbody tr{display:table-row!important}
+  #sec-sheets{break-before:page}
+  .sheet{break-after:page;page-break-after:always;border:1px solid #888}
+  .sheet:last-child{break-after:auto;page-break-after:auto}
+  .sheet-head,.storage,.dot,.chip{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .photos img{height:120px}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">S</span>SampleTag · Relatório de amostras</div>
+    <h1>{{HEADING}}</h1>
+    <div class="meta">{{META}}</div>
+    <div class="actions">
+      <button type="button" id="btn-csv">Baixar CSV</button>
+      <button type="button" class="ghost" id="btn-print">Imprimir</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section aria-labelledby="h-summary">
+    <h2 id="h-summary" class="sr">Resumo</h2>
+    <div class="stats">{{STATS}}</div>
+  </section>
+
+  <section aria-labelledby="h-map">
+    <h2 id="h-map">Mapa das amostras</h2>
+    <div class="card map-card">
+      <div class="map-bar">
+        <div class="seg" role="group" aria-label="Tipo de mapa">
+          <button type="button" id="mode-live" aria-pressed="true">Interativo</button>
+          <button type="button" id="mode-svg" aria-pressed="false">Simplificado (offline)</button>
+        </div>
+        <span class="notice" id="map-notice" role="status">{{MAP_NOTICE}}</span>
+      </div>
+      <div id="map" role="region" aria-label="Mapa interativo"></div>
+      <div id="svgmap">{{SVG_MAP}}</div>
+      <div class="legend">{{LEGEND}}</div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-table">
+    <h2 id="h-table">Tabela de amostras</h2>
+    <div class="toolbar">
+      <label class="sr" for="q">Buscar</label>
+      <input id="q" type="search" placeholder="Buscar em todos os campos…" autocomplete="off">
+      <label class="sr" for="f-tpl">Filtrar por modelo</label>
+      <select id="f-tpl"><option value="">Todos os modelos</option>{{TEMPLATE_OPTIONS}}</select>
+      <span class="count" id="count" aria-live="polite"></span>
+    </div>
+    <div class="card table-wrap">
+      <table id="tbl">
+        <thead><tr>{{TABLE_HEAD}}</tr></thead>
+        <tbody>{{TABLE_ROWS}}</tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="sec-sheets" aria-labelledby="h-sheets">
+    <h2 id="h-sheets">Fichas individuais</h2>
+    <div class="sheets">{{SHEETS}}</div>
+  </section>
+
+  <footer>Gerado pelo SampleTag em {{GENERATED_AT}}. Arquivo autocontido: funciona offline; o mapa interativo usa tiles do OpenStreetMap quando há internet.</footer>
+</main>
+
+<script type="application/json" id="samples-data">{{DATA_JSON}}</script>
+<script>{{LEAFLET_JS}}</script>
+<script>
+(function(){
+  'use strict';
+  var DATA = JSON.parse(document.getElementById('samples-data').textContent);
+  var S = DATA.samples;
+  var CLUSTER_MIN_POINTS = 25; // agrupa marcadores só quando há muitos pontos
+  var CLUSTER_CELL_PX = 56;
+
+  function esc(v){
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function fmtDate(iso){
+    var d = new Date(iso); if (isNaN(d)) return '';
+    function p(n){return (n<10?'0':'')+n;}
+    return p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+' '+p(d.getHours())+':'+p(d.getMinutes());
+  }
+  function thumbOf(i){
+    var img = document.querySelector('#sheet-'+i+' .photos img');
+    return img ? img.getAttribute('src') : null;
+  }
+  function popupHtml(i){
+    var s = S[i], t = thumbOf(i);
+    var place = [s.municipality, s.state].filter(Boolean).join('/');
+    return '<div class="pop"><div class="pop-code">'+esc(s.sampleCode)+'</div>'+
+      '<div>'+esc(fmtDate(s.collectedAt))+'</div>'+
+      (s.collectorName?'<div>Coletor: '+esc(s.collectorName)+'</div>':'')+
+      (s.cloneGenotype?'<div>Clone: '+esc(s.cloneGenotype)+'</div>':'')+
+      (place?'<div>'+esc(place)+'</div>':'')+
+      (t?'<img alt="Foto de '+esc(s.sampleCode)+'" src="'+esc(t)+'">':'')+
+      '<div><a href="#sheet-'+i+'">Ver ficha</a></div></div>';
+  }
+
+  /* ---------- Mapa interativo (Leaflet) com fallback SVG ---------- */
+  var pts = [];
+  S.forEach(function(s, i){ if (s.latitude != null && s.longitude != null) pts.push({i:i, lat:s.latitude, lon:s.longitude, color:s.color}); });
+  var map = null, layer = null, mode = 'live';
+  var notice = document.getElementById('map-notice');
+  var btnLive = document.getElementById('mode-live'), btnSvg = document.getElementById('mode-svg');
+
+  function setMode(m, msg){
+    mode = m;
+    document.getElementById('map').style.display = m === 'live' ? '' : 'none';
+    document.getElementById('svgmap').style.display = m === 'svg' ? 'block' : 'none';
+    btnLive.setAttribute('aria-pressed', m === 'live');
+    btnSvg.setAttribute('aria-pressed', m === 'svg');
+    if (msg != null) notice.textContent = msg;
+    if (m === 'live' && map) setTimeout(function(){ map.invalidateSize(); }, 0);
+  }
+  btnLive.onclick = function(){ if (map) setMode('live', ''); else setMode('svg', 'Mapa interativo indisponível.'); };
+  btnSvg.onclick = function(){ setMode('svg', ''); };
+
+  function renderMarkers(){
+    if (!map) return;
+    layer.clearLayers();
+    var z = map.getZoom();
+    var useClusters = pts.length >= CLUSTER_MIN_POINTS && z < map.getMaxZoom();
+    var cells = {};
+    pts.forEach(function(p){
+      var key = p.i;
+      if (useClusters) { var q = map.project([p.lat, p.lon], z); key = Math.floor(q.x/CLUSTER_CELL_PX)+':'+Math.floor(q.y/CLUSTER_CELL_PX); }
+      (cells[key] = cells[key] || []).push(p);
+    });
+    Object.keys(cells).forEach(function(k){
+      var g = cells[k];
+      if (g.length === 1) {
+        var p = g[0];
+        L.circleMarker([p.lat, p.lon], {radius:9, color:'#fff', weight:2, fillColor:p.color, fillOpacity:.95})
+          .bindPopup(function(){ return popupHtml(p.i); })
+          .on('click', function(){ highlightRow(p.i, true); })
+          .addTo(layer);
+      } else {
+        var lat = 0, lon = 0; g.forEach(function(p){ lat += p.lat; lon += p.lon; });
+        var size = g.length < 10 ? 34 : g.length < 100 ? 42 : 50;
+        L.marker([lat/g.length, lon/g.length], {icon: L.divIcon({className:'', html:'<div class="cluster" style="width:'+size+'px;height:'+size+'px">'+g.length+'</div>', iconSize:[size,size]})})
+          .on('click', function(){ map.fitBounds(L.latLngBounds(g.map(function(p){ return [p.lat, p.lon]; })), {padding:[40,40], maxZoom:map.getMaxZoom()}); })
+          .addTo(layer);
+      }
+    });
+  }
+
+  function initLeaflet(){
+    if (typeof L === 'undefined' || !pts.length) return false;
+    map = L.map('map', {preferCanvas:true, worldCopyJump:true});
+    var loaded = 0, failed = 0;
+    var tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '&copy; colaboradores do OpenStreetMap'
+    }).on('tileload', function(){ loaded++; }).on('tileerror', function(){ failed++; }).addTo(map);
+    layer = L.layerGroup().addTo(map);
+    var b = L.latLngBounds(pts.map(function(p){ return [p.lat, p.lon]; }));
+    map.fitBounds(b, {padding:[40,40], maxZoom:15});
+    map.on('zoomend', renderMarkers);
+    renderMarkers();
+    // Sem internet os tiles falham: troca para o mapa SVG embutido.
+    function checkTiles(){
+      if (loaded === 0 && mode === 'live') setMode('svg', 'Sem conexão com o servidor de mapas: exibindo mapa simplificado.');
+    }
+    if (navigator.onLine === false) setMode('svg', 'Sem internet: exibindo mapa simplificado.');
+    else setTimeout(checkTiles, 7000);
+    tiles.on('tileerror', function(){ if (failed > 6 && loaded === 0) checkTiles(); });
+    return true;
+  }
+  if (!initLeaflet()) setMode('svg', pts.length ? 'Mapa interativo indisponível.' : 'Nenhuma amostra com coordenadas.');
+
+  // Pontos do mapa SVG: clique leva à linha/ficha.
+  Array.prototype.forEach.call(document.querySelectorAll('#svgmap .pt'), function(el){
+    el.addEventListener('click', function(){ focusSample(+el.getAttribute('data-idx'), false); highlightRow(+el.getAttribute('data-idx'), true); });
+  });
+
+  function focusSample(i, scrollToMap){
+    var s = S[i];
+    if (s.latitude == null || s.longitude == null) return;
+    Array.prototype.forEach.call(document.querySelectorAll('#svgmap .pt'), function(el){
+      el.classList.toggle('active', +el.getAttribute('data-idx') === i);
+    });
+    if (map && mode === 'live') {
+      map.setView([s.latitude, s.longitude], Math.max(map.getZoom(), 16));
+      L.popup().setLatLng([s.latitude, s.longitude]).setContent(popupHtml(i)).openOn(map);
+    }
+    if (scrollToMap) document.getElementById('h-map').scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  /* ---------- Tabela: busca, filtro, ordenação ---------- */
+  var tbody = document.querySelector('#tbl tbody');
+  var rows = Array.prototype.slice.call(tbody.rows);
+  var q = document.getElementById('q'), fTpl = document.getElementById('f-tpl'), count = document.getElementById('count');
+  rows.forEach(function(r){ r._text = r.textContent.toLowerCase(); });
+
+  function norm(s){ return s.normalize ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : s; }
+  rows.forEach(function(r){ r._text = norm(r._text); });
+
+  function applyFilter(){
+    var term = norm(q.value.trim().toLowerCase()), tpl = fTpl.value, n = 0;
+    rows.forEach(function(r){
+      var ok = (!tpl || r.getAttribute('data-tpl') === tpl) && (!term || r._text.indexOf(term) !== -1);
+      r.style.display = ok ? '' : 'none';
+      if (ok) n++;
+    });
+    count.textContent = n + ' de ' + rows.length + ' amostra' + (rows.length === 1 ? '' : 's');
+  }
+  q.addEventListener('input', applyFilter);
+  fTpl.addEventListener('change', applyFilter);
+  applyFilter();
+
+  var ths = document.querySelectorAll('#tbl th');
+  Array.prototype.forEach.call(ths, function(th, col){
+    th.tabIndex = 0;
+    function sort(){
+      var dir = th.getAttribute('aria-sort') === 'ascending' ? -1 : 1;
+      Array.prototype.forEach.call(ths, function(o){ o.removeAttribute('aria-sort'); });
+      th.setAttribute('aria-sort', dir === 1 ? 'ascending' : 'descending');
+      var numeric = th.getAttribute('data-type') === 'num';
+      rows.sort(function(a, b){
+        var x = a.cells[col].getAttribute('data-v'), y = b.cells[col].getAttribute('data-v');
+        if (x == null) x = a.cells[col].textContent; if (y == null) y = b.cells[col].textContent;
+        if (numeric) { x = x === '' ? -Infinity : +x; y = y === '' ? -Infinity : +y; return (x - y) * dir; }
+        return x.localeCompare(y, 'pt-BR', {numeric:true, sensitivity:'base'}) * dir;
+      });
+      rows.forEach(function(r){ tbody.appendChild(r); });
+    }
+    th.addEventListener('click', sort);
+    th.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sort(); } });
+  });
+
+  function highlightRow(i, scroll){
+    rows.forEach(function(r){ r.classList.toggle('active', +r.getAttribute('data-idx') === i); });
+    var r = tbody.querySelector('tr[data-idx="'+i+'"]');
+    if (r && scroll) r.scrollIntoView({block:'nearest'});
+  }
+  rows.forEach(function(r){
+    r.tabIndex = 0;
+    function go(){ var i = +r.getAttribute('data-idx'); highlightRow(i, false); focusSample(i, true); }
+    r.addEventListener('click', go);
+    r.addEventListener('keydown', function(e){ if (e.key === 'Enter') go(); });
+  });
+
+  /* ---------- CSV gerado no navegador ---------- */
+  function csvCell(v){
+    v = v == null ? '' : String(v);
+    if (/^[=+\-@\t\r]/.test(v) && isNaN(+v.replace(',', '.'))) v = "'" + v;
+    return /[;"\r\n]/.test(v) || v !== v.trim() ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+  document.getElementById('btn-csv').addEventListener('click', function(){
+    var visible = {}; rows.forEach(function(r){ if (r.style.display !== 'none') visible[r.getAttribute('data-idx')] = true; });
+    var custom = [], seen = {};
+    DATA.templates.forEach(function(t){ t.fields.forEach(function(f){ if (!seen[f.key]) { seen[f.key] = 1; custom.push(f); } }); });
+    var head = ['codigo','modelo','categoria','data_coleta','coletor','contato','clone_genotipo','origem_propriedade','municipio','uf','latitude','longitude','altitude_m','precisao_gps_m','fotos','observacoes','armazenamento','id'].concat(custom.map(function(f){ return f.label; }));
+    var lines = [head.map(csvCell).join(';')];
+    S.forEach(function(s, i){
+      if (!visible[i]) return;
+      lines.push([s.sampleCode, s.template, s.categoryLabel, fmtDate(s.collectedAt), s.collectorName, s.collectorContact, s.cloneGenotype, s.originProperty, s.municipality, s.state,
+        s.latitude == null ? '' : s.latitude.toFixed(6), s.longitude == null ? '' : s.longitude.toFixed(6),
+        s.altitude == null ? '' : s.altitude.toFixed(1), s.gpsAccuracyMeters == null ? '' : s.gpsAccuracyMeters.toFixed(1),
+        (s.photos || []).length, s.notes, s.storageInstruction, s.id]
+        .concat(custom.map(function(f){ var v = (s.customFields || {})[f.key]; return v == null ? '' : v; })).map(csvCell).join(';'));
+    });
+    var blob = new Blob(['\ufeff' + lines.join('\r\n') + '\r\n'], {type:'text/csv;charset=utf-8'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = DATA.csvFileName;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  });
+  document.getElementById('btn-print').addEventListener('click', function(){ window.print(); });
+})();
+</script>
+</body>
+</html>

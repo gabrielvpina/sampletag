@@ -1,0 +1,97 @@
+# SampleTag
+
+App Flutter (Android e iOS) para **registrar e etiquetar amostras de campo** (biológicas e técnicas), 100% offline, com exportação de um **relatório HTML autocontido** com mapa e todas as amostras.
+
+## Funcionalidades
+
+| Tela | O que faz |
+|---|---|
+| **Amostras** | Lista com busca (ignora acentos), filtros (modelo, período, coletor, município), ordenação e contador. Card com miniatura, código, data e município. |
+| **Nova/editar amostra** | Escolha do modelo, código gerado automaticamente (editável), data/hora e coletor preenchidos, GPS com precisão em metros (aviso > 20 m e "Aguardar melhor precisão"), município/UF por geocodificação reversa (quando há internet), várias fotos (câmera/galeria, lado maior 1600 px, JPEG 80%), campos extras do modelo, **rascunho salvo automaticamente**. |
+| **Detalhe** | Todos os dados, fotos (tela cheia com zoom), mini-mapa e QR code. |
+| **Etiqueta** | PDF no layout da ficha (cabeçalho "FICHA DE AMOSTRA - {MODELO}", campos, QR com JSON compacto, rodapé com armazenamento) em 50×30 mm, 100×70 mm e A4 (8 por folha). Imprime e compartilha via `printing`. |
+| **Escanear** | Lê o QR da etiqueta (ou digita o código) e abre a amostra. |
+| **Mapa** | Todas as amostras (respeitando os filtros) em `flutter_map` com tiles OSM e cache; sem internet os pontos aparecem sobre fundo neutro. |
+| **Modelos** | Criar/editar modelos: nome, prefixo, cor, categoria, armazenamento padrão e campos extras (texto, número, lista, data; obrigatórios ou não). Vem com **Cacau**. |
+| **Exportar** | Relatório HTML, CSV (`;`, UTF-8 com BOM), KML (Google Earth/QGIS), backup ZIP (banco + fotos) e restauração. Tudo pela folha de compartilhamento — nada sai do aparelho sem ação do usuário. |
+| **Ajustes** | Coletor padrão, projeto/expedição, formato do código, tema claro/escuro e carga das 5 amostras de exemplo. |
+
+### Relatório HTML
+
+Um único `.html` (`SampleTag_Relatorio_{projeto}_{AAAA-MM-DD}.html`) que abre em qualquer navegador:
+
+- Leaflet 1.9.4 (JS/CSS) e fotos (miniaturas ~400 px, JPEG 70%, base64) **embutidos**;
+- mapa com marcadores coloridos por modelo, `fitBounds`, agrupamento simples acima de 25 pontos e popup com código, data, coletor, clone, município/UF e miniatura;
+- **mapa SVG offline** (projeção equiretangular, grade lat/long, escala e norte), usado automaticamente quando os tiles não carregam;
+- cabeçalho com projeto, período, data de geração e totais por modelo, coletor e município;
+- tabela com todas as colunas, busca em tempo real, ordenação por coluna e filtro por modelo; clicar na linha centraliza o mapa e abre o popup;
+- uma ficha por amostra (campos, campos personalizados, fotos e QR em SVG);
+- `<script type="application/json" id="samples-data">` com todos os dados;
+- botões **Baixar CSV** (gerado no navegador) e **Imprimir** (`@media print`: uma ficha por página);
+- responsivo, com tema escuro, e todo texto do usuário escapado contra injeção de HTML.
+
+Exemplo pronto: [`demo/SampleTag_Relatorio_Cacau_Sul_da_Bahia_2026-11-12.html`](demo/) — 5 amostras em fazendas de cacau de Ilhéus, Uruçuca, Itajuípe, Una e Camacan (nomes fictícios).
+
+## Arquitetura
+
+```
+lib/
+  core/        tema, formatação, erros, widgets comuns
+  domain/      modelos (Dart puro), geração de código, filtros, dados iniciais
+  data/        banco drift (tabelas, migrações) e repositórios
+  services/    GPS, fotos, geocodificação
+    export/    CSV, KML, QR, etiquetas PDF, relatório HTML, backup
+  features/    telas (samples, labels, scanner, map, templates, export, settings, home)
+  l10n/        ARB (pt, en) para i18n
+  providers.dart  Riverpod
+assets/report/ template.html (placeholders {{...}}), leaflet.min.js, leaflet.min.css
+tool/          generate_demo_report.dart
+```
+
+- **Estado:** Riverpod 3. **Banco:** drift/SQLite com migrações versionadas em `AppDatabase.migrations`.
+- **UI:** Material 3 via `package:material_ui` (no Flutter 3.50 o Material saiu do SDK). Pacotes que ainda usam `package:flutter/material.dart` (flutter_map, printing, mobile_scanner) funcionam por meio do `MaterialUiCompatibilityBridge`.
+- Os geradores (CSV, KML, HTML, PDF, QR) são **Dart puro**, testáveis sem aparelho.
+- As fotos ficam em `<documentos do app>/photos/` e o banco guarda só o nome do arquivo.
+
+## Requisitos
+
+- Flutter 3.50+ (Dart 3.14+)
+- Android SDK (API 24+) e/ou Xcode 16+ (iOS 15+)
+
+> **minSdk:** o pedido original era API 23, mas o Flutter 3.50 só suporta Android 7.0+ (**API 24**), que é o valor configurado.
+
+## Build e execução
+
+```bash
+flutter pub get
+dart run build_runner build     # gera lib/data/db/database.g.dart (já versionado)
+flutter gen-l10n                # gera lib/l10n/app_localizations*.dart (já versionado)
+
+flutter run                     # aparelho/emulador conectado
+flutter build apk --release     # build/app/outputs/flutter-apk/app-release.apk
+flutter build ios --release     # requer Xcode e assinatura
+```
+
+O build release usa a chave de debug — configure sua assinatura em `android/app/build.gradle.kts` antes de publicar.
+
+## Testes
+
+```bash
+flutter analyze                                   # sem avisos
+flutter test                                      # unitários + widget + fluxo
+flutter test integration_test/app_flow_test.dart -d <device>
+dart run tool/generate_demo_report.dart           # relatório de demonstração em demo/
+```
+
+- `test/sample_code_test.dart` — geração do código (`CAC-2026-0001`).
+- `test/exporters_test.dart` — CSV (escape, injeção de fórmula), KML e QR.
+- `test/html_report_builder_test.dart` — gerador do HTML: autocontido, placeholders, JSON, escape contra injeção, mapa SVG.
+- `test/data_test.dart` — banco (modelo Cacau, CRUD, rascunhos), filtros e PDF das etiquetas.
+- `test/sample_form_widget_test.dart` — formulário (validação e salvamento) e fluxo criar amostra → exportar relatório.
+- `integration_test/app_flow_test.dart` — mesmo fluxo em aparelho real.
+
+## Permissões e privacidade
+
+- **Câmera** (fotos e leitura de QR) e **localização** (coordenadas) são pedidas só no momento do uso, com explicação antes.
+- **Internet** é opcional: só para tiles do mapa e geocodificação reversa.
+- Erros tratados: GPS desligado (atalho para ativar), permissão negada/bloqueada (atalho para ajustes), sem sinal (tempo-limite) e armazenamento cheio.
