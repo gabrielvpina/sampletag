@@ -17,10 +17,13 @@ class CsvExporter {
     'codigo', 'modelo', 'categoria', 'data_coleta', 'coletor', 'contato',
     'clone_genotipo', 'origem_propriedade', 'municipio', 'uf', 'latitude',
     'longitude', 'altitude_m', 'precisao_gps_m', 'fotos', 'observacoes',
-    'armazenamento', 'id',
+    'armazenamento', 'amostra_origem', 'id',
   ];
 
-  String export(List<Sample> samples, Map<String, SampleTemplate> templates) {
+  /// [codesById] (id -> código) resolve o código da amostra de origem das
+  /// amostras técnicas mesmo quando a origem não está na exportação.
+  String export(List<Sample> samples, Map<String, SampleTemplate> templates, {Map<String, String>? codesById}) {
+    final codes = codesById ?? codesByIdOf(samples);
     // Campos personalizados: chave -> rótulo, sem repetir.
     final custom = <String, String>{};
     for (final s in samples) {
@@ -54,6 +57,7 @@ class CsvExporter {
         s.photos.length.toString(),
         s.notes,
         s.storageInstruction,
+        parentCodeOf(s, codes),
         s.id,
         for (final k in custom.keys) fmtCustomValue(s.customFields[k]),
       ]);

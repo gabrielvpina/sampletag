@@ -60,10 +60,20 @@ h2{font-size:19px;margin:0 0 12px}
 #map{height:min(62vh,520px);background:#DCE5EA}
 .leaflet-control-layers{font-size:13px}
 .leaflet-control-layers label{display:flex;gap:6px;align-items:center;min-height:30px}
-#svgmap{display:none;background:#DCE5EA}
-#svgmap svg{display:block;width:100%;height:auto}
+#svgmap{display:none;background:#DCE5EA;position:relative;overflow:hidden}
+#svgmap svg{display:block;width:100%;height:auto;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+#svgmap svg.dragging{cursor:grabbing}
 #svgmap .pt{cursor:pointer}
 #svgmap .pt.active circle{stroke:#000;stroke-width:3}
+#svgmap .pt.lbl-off text{display:none}
+#svgmap .pt.active text{display:inline}
+#svgmap.zoomed .zoom-hide{display:none}
+.svg-ctrl{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px}
+.svg-ctrl button{min-height:40px;width:40px;padding:0;border-radius:10px;background:#fff;color:#1D241E;font-size:20px;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.svg-ctrl button.reset{font-size:13px}
+.svg-hint{position:absolute;left:10px;bottom:10px;font-size:12px;background:rgba(255,255,255,.85);color:#1D241E;padding:3px 8px;border-radius:6px}
+.pt-label{background:rgba(255,255,255,.9);border:0;box-shadow:0 1px 3px rgba(0,0,0,.35);font-weight:700;font-size:12px;padding:1px 6px}
+.pt-label::before{display:none}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;padding:10px 12px;font-size:13px;border-top:1px solid var(--line)}
 .leaflet-popup-content{margin:10px 12px;font-size:13px;line-height:1.4;min-width:180px}
 .pop-code{font-weight:700;font-size:14px}
@@ -112,7 +122,7 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
   @page{margin:12mm}
   body{background:#fff;color:#000;font-size:11pt}
   header.top{background:#fff!important;color:#000;border-bottom:3px solid #3D5C40}
-  .actions,.toolbar,.map-bar .seg,#map,.no-print{display:none!important}
+  .actions,.toolbar,.map-bar .seg,#map,.no-print,.svg-ctrl,.svg-hint{display:none!important}
   #svgmap{display:block!important;background:#fff}
   .card{box-shadow:none;border-color:#bbb}
   .table-wrap{max-height:none;overflow:visible}
@@ -153,12 +163,19 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
       <div class="map-bar">
         <div class="seg" role="group" aria-label="Tipo de mapa">
           <button type="button" id="mode-live" aria-pressed="true">Interativo</button>
-          <button type="button" id="mode-svg" aria-pressed="false">Estático (impressão)</button>
+          <button type="button" id="mode-svg" aria-pressed="false">Estático (offline/impressão)</button>
         </div>
         <span class="notice" id="map-notice" role="status">{{MAP_NOTICE}}</span>
       </div>
       <div id="map" role="region" aria-label="Mapa interativo"></div>
-      <div id="svgmap">{{SVG_MAP}}</div>
+      <div id="svgmap">{{SVG_MAP}}
+        <div class="svg-ctrl">
+          <button type="button" id="svg-in" aria-label="Aproximar">+</button>
+          <button type="button" id="svg-out" aria-label="Afastar">−</button>
+          <button type="button" id="svg-reset" class="reset" aria-label="Ver tudo">⤢</button>
+        </div>
+        <span class="svg-hint">Role, pince ou use +/− para aproximar. A impressão sai como está na tela.</span>
+      </div>
       <div class="legend">{{LEGEND}}</div>
     </div>
   </section>
@@ -185,7 +202,7 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
     <div class="sheets">{{SHEETS}}</div>
   </section>
 
-  <footer>Gerado pelo SampleTag em {{GENERATED_AT}}. Arquivo autocontido: funciona offline; limites territoriais: IBGE; o fundo OpenStreetMap é opcional e exige internet.</footer>
+  <footer>Gerado pelo SampleTag em {{GENERATED_AT}}. Arquivo autocontido: funciona offline; limites territoriais: IBGE; os fundos de satélite (Esri) e ruas (CARTO/OpenStreetMap) exigem internet.</footer>
 </main>
 
 <script type="application/json" id="samples-data">{{DATA_JSON}}</script>
@@ -276,8 +293,10 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
       var g = cells[k];
       if (g.length === 1) {
         var p = g[0];
-        L.circleMarker([p.lat, p.lon], {pane:'samples', radius:9, color:'#fff', weight:2.5, fillColor:p.color, fillOpacity:1})
-          .bindPopup(function(){ return popupHtml(p.i); })
+        var m = L.circleMarker([p.lat, p.lon], {pane:'samples', radius:9, color:'#fff', weight:2.5, fillColor:p.color, fillOpacity:1});
+        // Código ao lado do ponto quando aproximado (ou com poucos pontos).
+        if (z >= 15 || pts.length <= 8) m.bindTooltip(esc(S[p.i].sampleCode), {permanent:true, direction:'right', offset:[10,0], className:'pt-label'});
+        m.bindPopup(function(){ return popupHtml(p.i); })
           .on('click', function(){ highlightRow(p.i, true); })
           .addTo(layer);
       } else {
@@ -294,51 +313,227 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
     var states = GEO.states && GEO.states.length ? toGeoJson(GEO.states) : null;
     var muns = GEO.municipalities && GEO.municipalities.length ? toGeoJson(GEO.municipalities) : null;
     if (typeof L === 'undefined' || (!pts.length && !states)) return false;
-    map = L.map('map', {zoomSnap:0.5, maxZoom:18});
+    map = L.map('map', {zoomSnap:0.5, maxZoom:20});
     // Panes garantem a ordem: preenchimento < tiles online < limites < amostras.
     map.createPane('geoFill').style.zIndex = 150;
     map.createPane('geoLines').style.zIndex = 380;
     map.createPane('samples').style.zIndex = 450;
     var offline = L.layerGroup();
-    var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; colaboradores do OpenStreetMap'});
-    var overlays = {};
+    // Fundos online que aceitam pedidos de páginas abertas direto do disco
+    // (file://). O servidor do OpenStreetMap recusa esses pedidos (exige o
+    // cabeçalho Referer), por isso não é usado diretamente.
+    var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {maxNativeZoom:18, maxZoom:20, attribution:'Imagens &copy; Esri, Maxar, Earthstar Geographics'});
+    var streets = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      {subdomains:'abcd', maxNativeZoom:19, maxZoom:20, attribution:'&copy; colaboradores do OpenStreetMap &copy; CARTO'});
+    var overlays = {}, munLayer = null, stateLayer = null;
     if (states) {
       L.geoJSON(states, {pane:'geoFill', interactive:false, style:function(f){
         return {stroke:false, fillColor: f.properties.h ? '#FBFBF5' : '#ECEEE6', fillOpacity:1};
       }}).addTo(offline);
     }
     if (muns) {
-      overlays['Limites municipais'] = L.geoJSON(muns, {pane:'geoLines', style:{color:'#9AA394', weight:0.8, opacity:.9, fill:true, fillOpacity:0},
+      munLayer = overlays['Limites municipais'] = L.geoJSON(muns, {pane:'geoLines', style:{color:'#9AA394', weight:0.8, opacity:.9, fill:true, fillOpacity:0},
         onEachFeature:function(f, l){ l.bindTooltip(esc(f.properties.n), {sticky:true, direction:'top'}); }}).addTo(map);
     }
     if (states) {
-      overlays['Limites estaduais'] = L.geoJSON(states, {pane:'geoLines', interactive:false, style:{color:'#6F7A6D', weight:1.8, fill:false}}).addTo(map);
+      stateLayer = overlays['Limites estaduais'] = L.geoJSON(states, {pane:'geoLines', interactive:false, style:{color:'#6F7A6D', weight:1.8, fill:false}}).addTo(map);
     }
-    offline.addTo(map);
-    L.control.layers({'Limites IBGE (offline)': offline, 'OpenStreetMap (internet)': osm}, overlays, {collapsed:false, position:'topright'}).addTo(map);
+    // Sobre o satélite, limites claros para aparecerem.
+    function styleLines(onImagery){
+      if (munLayer) munLayer.setStyle({color: onImagery ? '#FFFFFF' : '#9AA394', opacity: onImagery ? .55 : .9});
+      if (stateLayer) stateLayer.setStyle({color: onImagery ? '#FFE9A8' : '#6F7A6D'});
+    }
+    var bases = {'Satélite (internet)': satellite, 'Ruas (internet)': streets, 'Limites IBGE (offline)': offline};
+    var current = null;
+    function useBase(layer, msg){
+      if (current) map.removeLayer(current);
+      current = layer.addTo(map);
+      styleLines(layer === satellite);
+      if (msg != null) notice.textContent = msg;
+    }
+    // Sem internet (ou fundo bloqueado): volta sozinho para o offline.
+    function watchTiles(layer, name){
+      var loaded = 0, failed = 0;
+      layer.on('tileload', function(){ loaded++; });
+      layer.on('tileerror', function(){
+        failed++;
+        if (failed >= 4 && loaded === 0 && current === layer) {
+          useBase(offline, 'Sem acesso ao mapa de ' + name + ' (sem internet?). Mostrando limites do IBGE, que funcionam offline.');
+        }
+      });
+    }
+    watchTiles(satellite, 'satélite');
+    watchTiles(streets, 'ruas');
+    useBase(navigator.onLine === false ? offline : satellite);
+    map.on('baselayerchange', function(e){ current = e.layer; styleLines(e.layer === satellite); });
+    L.control.layers(bases, overlays, {collapsed:false, position:'topright'}).addTo(map);
     L.control.scale({imperial:false}).addTo(map);
     layer = L.layerGroup().addTo(map);
     var b;
     if (pts.length) b = L.latLngBounds(pts.map(function(p){ return [p.lat, p.lon]; }));
     else L.geoJSON(states, {filter:function(f){ return f.properties.h; }}).eachLayer(function(l){ b = b ? b.extend(l.getBounds()) : l.getBounds(); });
-    if (b) map.fitBounds(b, {padding:[40,40], maxZoom:12}); else map.setView([-14.2, -51.9], 4);
+    // Pontos próximos: aproxima bastante (até ~escala de 20 m) para separá-los.
+    if (b) map.fitBounds(b, {padding:[40,40], maxZoom:pts.length === 1 ? 16 : 18}); else map.setView([-14.2, -51.9], 4);
     map.on('zoomend', renderMarkers);
     renderMarkers();
     return true;
   }
   if (!initLeaflet()) setMode('svg', pts.length ? 'Mapa interativo indisponível neste navegador.' : 'Nenhuma amostra com coordenadas.');
 
-  // Pontos do mapa SVG: clique leva à linha/ficha.
-  Array.prototype.forEach.call(document.querySelectorAll('#svgmap .pt'), function(el){
-    el.addEventListener('click', function(){ focusSample(+el.getAttribute('data-idx'), false); highlightRow(+el.getAttribute('data-idx'), true); });
+  /* ---------- Mapa estático (SVG) com zoom ----------
+   * O conteúdo de #svg-view é transformado; pontos e rótulos são
+   * reescalados para manter o tamanho na tela, rótulos sobrepostos são
+   * escondidos e a barra de escala é recalculada. */
+  var svgBox = document.getElementById('svgmap');
+  var svg = svgBox.querySelector('svg');
+  var svgView = svg && svg.getElementById ? svg.getElementById('svg-view') : null;
+  var svgPts = svg ? Array.prototype.slice.call(svg.querySelectorAll('.pt')) : [];
+  var VB = svg ? svg.viewBox.baseVal : null;
+  var view = {k:1, x:0, y:0}; // tela = conteúdo * k + (x, y), em unidades do viewBox
+  var MAX_K = 400;
+  var kmPerUnit = svg ? parseFloat(svg.getAttribute('data-km-per-unit')) || 0 : 0;
+  svgPts.forEach(function(el){
+    var m = /translate\(([-\d.]+)[ ,]([-\d.]+)\)/.exec(el.getAttribute('transform') || '');
+    el._x = m ? +m[1] : 0; el._y = m ? +m[2] : 0;
+    var t = el.querySelector('text'); el._len = t ? t.textContent.length : 0;
   });
+
+  function niceStep(raw){
+    if (raw <= 0) return 1;
+    var e = Math.floor(Math.log(raw) / Math.LN10), base = Math.pow(10, e), m = raw / base;
+    return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * base;
+  }
+  function updateScale(){
+    var g = svg.getElementById('svg-scale'); if (!g || !kmPerUnit) return;
+    var kpu = kmPerUnit / view.k, km = niceStep(kpu * 160), w = km / kpu;
+    var right = +g.getAttribute('data-right'), sx = right - w, sy = 28;
+    var r = g.querySelector('rect'), p = g.querySelector('path'), t = g.querySelector('text');
+    r.setAttribute('x', (sx - 8).toFixed(1)); r.setAttribute('width', (w + 16).toFixed(1));
+    p.setAttribute('d', 'M' + sx.toFixed(1) + ' ' + sy + 'v8h' + w.toFixed(1) + 'v-8');
+    t.setAttribute('x', (sx + w / 2).toFixed(1));
+    t.textContent = km >= 1 ? String(km).replace('.', ',') + ' km' : Math.round(km * 1000) + ' m';
+  }
+  // Esconde rótulos que encostariam em outro ponto ou rótulo já mostrado.
+  function declutter(){
+    var boxes = [];
+    svgPts.forEach(function(el){
+      var sx = el._x * view.k + view.x, sy = el._y * view.k + view.y;
+      boxes.push([sx - 9, sy - 9, sx + 9, sy + 9]);
+    });
+    svgPts.forEach(function(el){
+      var sx = el._x * view.k + view.x, sy = el._y * view.k + view.y;
+      var box = [sx + 12, sy - 9, sx + 14 + el._len * 7.6, sy + 8];
+      var off = box[0] > VB.width || box[2] < 0 || box[1] > VB.height || box[3] < 0;
+      for (var i = 0; !off && i < boxes.length; i++) {
+        var o = boxes[i];
+        if (box[0] < o[2] && box[2] > o[0] && box[1] < o[3] && box[3] > o[1] && !(o[0] === sx - 9 && o[1] === sy - 9)) off = true;
+      }
+      el.classList.toggle('lbl-off', off);
+      if (!off) boxes.push(box);
+    });
+  }
+  function applyView(){
+    if (!svgView) return;
+    svgView.setAttribute('transform', 'translate(' + view.x.toFixed(3) + ' ' + view.y.toFixed(3) + ') scale(' + view.k.toFixed(5) + ')');
+    var inv = (1 / view.k).toFixed(6);
+    svgPts.forEach(function(el){ el.firstElementChild.nextElementSibling.setAttribute('transform', 'scale(' + inv + ')'); });
+    svgBox.classList.toggle('zoomed', view.k > 1.6);
+    updateScale();
+    declutter();
+  }
+  // Converte coordenadas do evento para unidades do viewBox.
+  function toUnits(clientX, clientY){
+    var r = svg.getBoundingClientRect();
+    return [(clientX - r.left) / r.width * VB.width, (clientY - r.top) / r.height * VB.height];
+  }
+  function zoomAt(ux, uy, factor){
+    var k = Math.min(MAX_K, Math.max(1, view.k * factor));
+    factor = k / view.k;
+    view.x = ux - (ux - view.x) * factor;
+    view.y = uy - (uy - view.y) * factor;
+    view.k = k;
+    clampView();
+    applyView();
+  }
+  function clampView(){
+    // Não deixa o conteúdo sair inteiro da área visível.
+    view.x = Math.min(0, Math.max(VB.width - VB.width * view.k, view.x));
+    view.y = Math.min(0, Math.max(VB.height - VB.height * view.k, view.y));
+  }
+  function centerOn(ux, uy, k){
+    view.k = k; view.x = VB.width / 2 - ux * k; view.y = VB.height / 2 - uy * k;
+    clampView(); applyView();
+  }
+  if (svgView) {
+    svg.addEventListener('wheel', function(e){
+      e.preventDefault();
+      var u = toUnits(e.clientX, e.clientY);
+      zoomAt(u[0], u[1], Math.pow(2, -e.deltaY / (e.deltaMode === 1 ? 6 : 300)));
+    }, {passive:false});
+    var pointers = {}, last = null, pinch = null, moved = 0;
+    svg.addEventListener('pointerdown', function(e){
+      pointers[e.pointerId] = [e.clientX, e.clientY];
+      moved = 0; last = [e.clientX, e.clientY];
+      svg.classList.add('dragging');
+    });
+    svg.addEventListener('pointermove', function(e){
+      if (!pointers[e.pointerId]) return;
+      pointers[e.pointerId] = [e.clientX, e.clientY];
+      var ids = Object.keys(pointers);
+      if (ids.length === 2) {
+        var a = pointers[ids[0]], b2 = pointers[ids[1]];
+        var d = Math.hypot(a[0] - b2[0], a[1] - b2[1]);
+        var mid = toUnits((a[0] + b2[0]) / 2, (a[1] + b2[1]) / 2);
+        if (pinch) zoomAt(mid[0], mid[1], d / pinch);
+        pinch = d; moved += 10;
+        return;
+      }
+      if (!last) return;
+      var r = svg.getBoundingClientRect(), s2 = VB.width / r.width;
+      var dx = (e.clientX - last[0]) * s2, dy = (e.clientY - last[1]) * s2;
+      moved += Math.abs(dx) + Math.abs(dy);
+      if (moved > 4 && !svg.hasPointerCapture(e.pointerId)) svg.setPointerCapture(e.pointerId);
+      view.x += dx; view.y += dy; last = [e.clientX, e.clientY];
+      clampView(); applyView();
+    });
+    function up(e){
+      delete pointers[e.pointerId];
+      if (Object.keys(pointers).length < 2) pinch = null;
+      if (!Object.keys(pointers).length) { last = null; svg.classList.remove('dragging'); }
+      else { var rest = pointers[Object.keys(pointers)[0]]; last = [rest[0], rest[1]]; }
+    }
+    svg.addEventListener('pointerup', up);
+    svg.addEventListener('pointercancel', up);
+    svg.addEventListener('dblclick', function(e){ var u = toUnits(e.clientX, e.clientY); zoomAt(u[0], u[1], 2.5); });
+    document.getElementById('svg-in').onclick = function(){ zoomAt(VB.width / 2, VB.height / 2, 2); };
+    document.getElementById('svg-out').onclick = function(){ zoomAt(VB.width / 2, VB.height / 2, 0.5); };
+    document.getElementById('svg-reset').onclick = function(){ view = {k:1, x:0, y:0}; applyView(); };
+    applyView();
+    // Pontos do mapa SVG: clique (sem arrastar) leva à linha/ficha.
+    svgPts.forEach(function(el){
+      el.addEventListener('click', function(){
+        if (moved > 4) return;
+        var i = +el.getAttribute('data-idx');
+        focusSample(i, false); highlightRow(i, true);
+      });
+    });
+  } else {
+    var ctrl = svgBox.querySelector('.svg-ctrl'), hint = svgBox.querySelector('.svg-hint');
+    if (ctrl) ctrl.style.display = 'none';
+    if (hint) hint.style.display = 'none';
+  }
 
   function focusSample(i, scrollToMap){
     var s = S[i];
     if (s.latitude == null || s.longitude == null) return;
-    Array.prototype.forEach.call(document.querySelectorAll('#svgmap .pt'), function(el){
-      el.classList.toggle('active', +el.getAttribute('data-idx') === i);
+    var target = null;
+    svgPts.forEach(function(el){
+      var on = +el.getAttribute('data-idx') === i;
+      el.classList.toggle('active', on);
+      if (on) target = el;
     });
+    if (target && mode === 'svg' && scrollToMap) centerOn(target._x, target._y, Math.max(view.k, 8));
     if (map && mode === 'live') {
       map.setView([s.latitude, s.longitude], Math.max(map.getZoom(), 16));
       L.popup().setLatLng([s.latitude, s.longitude]).setContent(popupHtml(i)).openOn(map);
@@ -410,14 +605,14 @@ footer{margin-top:32px;color:var(--muted);font-size:13px;text-align:center}
     var visible = {}; rows.forEach(function(r){ if (r.style.display !== 'none') visible[r.getAttribute('data-idx')] = true; });
     var custom = [], seen = {};
     DATA.templates.forEach(function(t){ t.fields.forEach(function(f){ if (!seen[f.key]) { seen[f.key] = 1; custom.push(f); } }); });
-    var head = ['codigo','modelo','categoria','data_coleta','coletor','contato','clone_genotipo','origem_propriedade','municipio','uf','latitude','longitude','altitude_m','precisao_gps_m','fotos','observacoes','armazenamento','id'].concat(custom.map(function(f){ return f.label; }));
+    var head = ['codigo','modelo','categoria','data_coleta','coletor','contato','clone_genotipo','origem_propriedade','municipio','uf','latitude','longitude','altitude_m','precisao_gps_m','fotos','observacoes','armazenamento','amostra_origem','id'].concat(custom.map(function(f){ return f.label; }));
     var lines = [head.map(csvCell).join(';')];
     S.forEach(function(s, i){
       if (!visible[i]) return;
       lines.push([s.sampleCode, s.template, s.categoryLabel, fmtDate(s.collectedAt), s.collectorName, s.collectorContact, s.cloneGenotype, s.originProperty, s.municipality, s.state,
         s.latitude == null ? '' : s.latitude.toFixed(6), s.longitude == null ? '' : s.longitude.toFixed(6),
         s.altitude == null ? '' : s.altitude.toFixed(1), s.gpsAccuracyMeters == null ? '' : s.gpsAccuracyMeters.toFixed(1),
-        (s.photos || []).length, s.notes, s.storageInstruction, s.id]
+        (s.photos || []).length, s.notes, s.storageInstruction, s.parentCode || '', s.id]
         .concat(custom.map(function(f){ var v = (s.customFields || {})[f.key]; return v == null ? '' : v; })).map(csvCell).join(';'));
     });
     var blob = new Blob(['\ufeff' + lines.join('\r\n') + '\r\n'], {type:'text/csv;charset=utf-8'});

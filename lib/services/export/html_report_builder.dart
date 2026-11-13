@@ -28,7 +28,12 @@ class ReportInput {
     this.title,
     this.geo,
     this.iconSvg = '',
+    this.codesById,
   });
+
+  /// id -> código de todas as amostras do aparelho, para mostrar a amostra
+  /// de origem mesmo quando ela não está no relatório.
+  final Map<String, String>? codesById;
 
   final List<Sample> samples;
   final Map<String, SampleTemplate> templates;
@@ -109,6 +114,7 @@ class HtmlReportBuilder {
     final heading = input.title ?? (project.isEmpty ? 'Relatório de amostras' : project);
 
     final customFields = _customFieldUnion(samples, templates);
+    final codes = {...codesByIdOf(samples), ...?input.codesById};
 
     final values = <String, String>{
       'TITLE': escapeHtml('SampleTag — $heading'),
@@ -122,10 +128,10 @@ class HtmlReportBuilder {
       'LEGEND': _legend(samples, templates),
       'TEMPLATE_OPTIONS': _templateOptions(samples, templates),
       'TABLE_HEAD': _tableHead(customFields),
-      'TABLE_ROWS': _tableRows(samples, templates, customFields),
-      'SHEETS': _sheets(samples, templates, input.thumbnails),
+      'TABLE_ROWS': _tableRows(samples, templates, customFields, codes),
+      'SHEETS': _sheets(samples, templates, input.thumbnails, codes),
       'GENERATED_AT': escapeHtml(fmtDateTime(input.generatedAt)),
-      'DATA_JSON': jsonForScript(_data(samples, templates, input)),
+      'DATA_JSON': jsonForScript(_data(samples, templates, input, codes)),
       'GEO_JSON': jsonForScript(input.geo?.toJson() ?? const {}),
       'LEAFLET_JS': _rawTextSafe(input.leafletJs, 'script'),
       'LEAFLET_CSS': _rawTextSafe(input.leafletCss, 'style'),
@@ -222,7 +228,7 @@ class HtmlReportBuilder {
   }
 
   static const _fixedColumns = <(String, bool)>[
-    ('Código', false), ('Modelo', false), ('Categoria', false), ('Data da coleta', false),
+    ('Código', false), ('Modelo', false), ('Categoria', false), ('Amostra de origem', false), ('Data da coleta', false),
     ('Coletor', false), ('Contato', false), ('Clone/genótipo', false), ('Origem/propriedade', false),
     ('Município/UF', false), ('Latitude', true), ('Longitude', true), ('Altitude (m)', true),
     ('Precisão GPS (m)', true), ('Fotos', true), ('Observações', false), ('Armazenamento', false),
@@ -239,7 +245,8 @@ class HtmlReportBuilder {
     return b.toString();
   }
 
-  String _tableRows(List<Sample> samples, Map<String, SampleTemplate> templates, List<TemplateField> custom) {
+  String _tableRows(List<Sample> samples, Map<String, SampleTemplate> templates, List<TemplateField> custom,
+      Map<String, String> codes) {
     final b = StringBuffer();
     for (var i = 0; i < samples.length; i++) {
       final s = samples[i];
@@ -255,6 +262,7 @@ class HtmlReportBuilder {
       b.write('<td><span class="dot" style="background:${_safeColor(t?.colorHex)}"></span> <b>${escapeHtml(s.sampleCode)}</b></td>');
       b.write(td(t?.name ?? ''));
       b.write(td(s.category.label));
+      b.write(td(parentCodeOf(s, codes)));
       b.write(td(fmtDateTime(s.collectedAt), sortValue: s.collectedAt.toIso8601String()));
       b.write(td(s.collectorName));
       b.write(td(s.collectorContact));
@@ -282,7 +290,8 @@ class HtmlReportBuilder {
     return b.toString();
   }
 
-  String _sheets(List<Sample> samples, Map<String, SampleTemplate> templates, Map<String, List<String>> thumbs) {
+  String _sheets(List<Sample> samples, Map<String, SampleTemplate> templates, Map<String, List<String>> thumbs,
+      Map<String, String> codes) {
     if (samples.isEmpty) return '<div class="card empty">Nenhuma amostra.</div>';
     final b = StringBuffer();
     for (var i = 0; i < samples.length; i++) {
@@ -291,6 +300,7 @@ class HtmlReportBuilder {
       final fields = <(String, String)>[
         ('Data/hora da coleta', fmtDateTime(s.collectedAt)),
         ('Categoria', s.category.label),
+        ('Amostra de origem', parentCodeOf(s, codes)),
         ('Coletor', s.collectorName),
         ('Contato', s.collectorContact),
         ('Clone/genótipo', s.cloneGenotype),
@@ -335,7 +345,8 @@ class HtmlReportBuilder {
     return b.toString();
   }
 
-  Map<String, Object?> _data(List<Sample> samples, Map<String, SampleTemplate> templates, ReportInput input) {
+  Map<String, Object?> _data(
+      List<Sample> samples, Map<String, SampleTemplate> templates, ReportInput input, Map<String, String> codes) {
     final usedTemplates = samples.map((s) => s.templateId).toSet();
     return {
       'app': 'SampleTag',
@@ -352,6 +363,7 @@ class HtmlReportBuilder {
             ...s.toJson(),
             'template': templates[s.templateId]?.name ?? '',
             'categoryLabel': s.category.label,
+            'parentCode': parentCodeOf(s, codes),
             'color': _safeColor(templates[s.templateId]?.colorHex),
           },
       ],
@@ -406,8 +418,9 @@ class HtmlReportBuilder {
       maxLon = focus.map((f) => f.bounds.maxLon).reduce(math.max);
     }
 
-    // Garante extensão mínima (~5 km, para dar contexto) e margem de 12%.
-    const minSpan = 0.05;
+    // Garante extensão mínima (~2 km, para dar contexto) e margem de 12%.
+    // Pontos mais próximos que isso são separados com o zoom do relatório.
+    const minSpan = 0.02;
     double padSpan(double lo, double hi) => math.max(hi - lo, minSpan);
     final latSpan0 = padSpan(minLat, maxLat), lonSpan0 = padSpan(minLon, maxLon);
     final cLat = (minLat + maxLat) / 2, cLon = (minLon + maxLon) / 2;
@@ -435,11 +448,17 @@ class HtmlReportBuilder {
     double x(double lon) => (lon - minLon) / (maxLon - minLon) * width;
     double y(double lat) => (maxLat - lat) / (maxLat - minLat) * height;
     String f(double v) => v.toStringAsFixed(1);
+    final kmPerUnit = (maxLon - minLon) * 111.32 * k / width;
 
+    // Tudo dentro de #svg-view é ampliado/deslocado pelo zoom do relatório;
+    // traços não engrossam (non-scaling-stroke) e pontos/rótulos são
+    // reescalados pelo script para manter o tamanho na tela.
     final b = StringBuffer()
       ..write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${f(width)} ${f(height)}" '
+          'data-km-per-unit="${kmPerUnit.toStringAsPrecision(6)}" '
           'role="img" aria-label="Mapa simplificado das amostras" font-family="system-ui,sans-serif">')
-      ..write('<rect width="100%" height="100%" fill="#DCE5EA"/>');
+      ..write('<rect width="100%" height="100%" fill="#DCE5EA"/>')
+      ..write('<g id="svg-view">');
 
     // Limites IBGE: só as áreas que aparecem no enquadramento.
     if (geo != null) {
@@ -472,17 +491,17 @@ class HtmlReportBuilder {
         final hl = geo.highlighted.contains(st.id);
         b.write('<path d="${path(st)}" fill="${hl ? '#FBFBF5' : '#ECEEE6'}"/>');
       }
-      b.write('</g><g fill="none" stroke="#BCC3B6" stroke-width="0.7">');
+      b.write('</g><g fill="none" stroke="#BCC3B6" stroke-width="0.7" vector-effect="non-scaling-stroke">');
       for (final m in geo.municipalities.where((m) => m.bounds.intersects(view))) {
         b.write('<path d="${path(m)}"><title>${escapeHtml(m.name)}</title></path>');
       }
-      b.write('</g><g fill="none" stroke="#7C877A" stroke-width="1.6" stroke-linejoin="round">');
+      b.write('</g><g fill="none" stroke="#7C877A" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke">');
       for (final st in visibleStates) {
         b.write('<path d="${path(st)}"/>');
       }
       b.write('</g>');
       // Rótulos das UFs no centro do enquadramento de cada uma (se couber).
-      b.write('<g fill="#7C877A" font-size="15" font-weight="700" text-anchor="middle" opacity=".55">');
+      b.write('<g class="zoom-hide" fill="#7C877A" font-size="15" font-weight="700" text-anchor="middle" opacity=".55">');
       for (final st in visibleStates) {
         final cx = x(((st.bounds.minLon + st.bounds.maxLon) / 2).clamp(minLon, maxLon));
         final cy = y(((st.bounds.minLat + st.bounds.maxLat) / 2).clamp(minLat, maxLat));
@@ -495,8 +514,8 @@ class HtmlReportBuilder {
 
     // Grade com passo "redondo" (1, 2, 5 × 10^n graus).
     final step = _niceStep((maxLon - minLon) / 6);
-    b.write('<g stroke="#C9CEBC" stroke-width="1">');
-    final labels = StringBuffer('<g fill="#5B665C" font-size="13">');
+    b.write('<g class="zoom-hide" stroke="#C9CEBC" stroke-width="1" vector-effect="non-scaling-stroke">');
+    final labels = StringBuffer('<g class="zoom-hide" fill="#5B665C" font-size="13">');
     for (var lon = (minLon / step).ceil() * step; lon <= maxLon; lon += step) {
       b.write('<line x1="${f(x(lon))}" y1="0" x2="${f(x(lon))}" y2="${f(height)}"/>');
       labels.write('<text x="${f(x(lon) + 4)}" y="${f(height - 8)}">${_deg(lon, 'L', 'O', step)}</text>');
@@ -510,34 +529,35 @@ class HtmlReportBuilder {
       ..write(labels)
       ..write('</g>');
 
-    // Barra de escala: km por unidade de largura.
-    final kmPerPx = (maxLon - minLon) * 111.32 * k / width;
-    final targetKm = kmPerPx * 160;
+    // Pontos (rótulo com o código, título com detalhes). Cada ponto fica
+    // num grupo posicionado; o grupo interno é reescalado no zoom.
+    String g(double v) => v.toStringAsFixed(2);
+    b.write('<g id="svg-pts">');
+    for (final (i, s) in pts) {
+      final t = templates[s.templateId];
+      final px = x(s.longitude!), py = y(s.latitude!);
+      b.write('<g class="pt" data-idx="$i" tabindex="0" transform="translate(${g(px)} ${g(py)})">'
+          '<title>${escapeHtml('${s.sampleCode} — ${s.place} — ${fmtDate(s.collectedAt)}')}</title>'
+          '<g class="pt-s"><circle r="9" fill="${_safeColor(t?.colorHex)}" stroke="#fff" stroke-width="2.5"/>'
+          '<text x="13" y="4" font-size="13" font-weight="600" fill="#1D241E" '
+          'stroke="#F2F4EC" stroke-width="3" paint-order="stroke">${escapeHtml(s.sampleCode)}</text></g></g>');
+    }
+    b.write('</g></g>'); // fecha #svg-pts e #svg-view
+
+    // Barra de escala (atualizada pelo script conforme o zoom).
+    final targetKm = kmPerUnit * 160;
     final barKm = _niceStep(targetKm);
-    final barPx = barKm / kmPerPx;
+    final barPx = barKm / kmPerUnit;
     final sx = width - barPx - 24, sy = 28.0;
     final label = barKm >= 1 ? '${_trim(barKm)} km' : '${(barKm * 1000).round()} m';
-    b.write('<g><rect x="${f(sx - 8)}" y="${f(sy - 18)}" width="${f(barPx + 16)}" height="34" rx="6" fill="#fff" fill-opacity=".85"/>'
+    b.write('<g id="svg-scale" data-right="${f(width - 24)}"><rect x="${f(sx - 8)}" y="${f(sy - 18)}" width="${f(barPx + 16)}" height="34" rx="6" fill="#fff" fill-opacity=".85"/>'
         '<path d="M${f(sx)} ${f(sy)}v8h${f(barPx)}v-8" fill="none" stroke="#1D241E" stroke-width="2"/>'
         '<text x="${f(sx + barPx / 2)}" y="${f(sy - 4)}" text-anchor="middle" font-size="13" fill="#1D241E">${escapeHtml(label)}</text></g>');
 
     // Norte.
     b.write('<g transform="translate(30 34)"><path d="M0 -16 L7 6 L0 1 L-7 6Z" fill="#3D5C40"/>'
         '<text y="22" text-anchor="middle" font-size="12" font-weight="700" fill="#3D5C40">N</text></g>');
-
-    // Pontos (rótulo com o código, título com detalhes).
-    b.write('<g>');
-    for (final (i, s) in pts) {
-      final t = templates[s.templateId];
-      final px = x(s.longitude!), py = y(s.latitude!);
-      b.write('<g class="pt" data-idx="$i" tabindex="0"><title>${escapeHtml('${s.sampleCode} — ${s.place} — ${fmtDate(s.collectedAt)}')}</title>'
-          '<circle cx="${f(px)}" cy="${f(py)}" r="9" fill="${_safeColor(t?.colorHex)}" stroke="#fff" stroke-width="2.5"/>'
-          '<text x="${f(px + 13)}" y="${f(py + 4)}" font-size="13" font-weight="600" fill="#1D241E" '
-          'stroke="#F2F4EC" stroke-width="3" paint-order="stroke">${escapeHtml(s.sampleCode)}</text></g>');
-    }
-    b
-      ..write('</g>')
-      ..write('</svg>');
+    b.write('</svg>');
     return b.toString();
   }
 

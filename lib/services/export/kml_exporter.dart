@@ -12,7 +12,9 @@ class KmlExporter {
     List<Sample> samples,
     Map<String, SampleTemplate> templates, {
     String documentName = 'SampleTag',
+    Map<String, String>? codesById,
   }) {
+    final codes = codesById ?? codesByIdOf(samples);
     final buf = StringBuffer()
       ..writeln('<?xml version="1.0" encoding="UTF-8"?>')
       ..writeln('<kml xmlns="http://www.opengis.net/kml/2.2">')
@@ -48,6 +50,8 @@ class KmlExporter {
         void data(String name, String value) =>
             buf.writeln('<Data name="${xml(name)}"><value>${xml(value)}</value></Data>');
         data('modelo', t?.name ?? '');
+        data('categoria', s.category.label);
+        data('amostra_origem', parentCodeOf(s, codes));
         data('data_coleta', fmtDateTime(s.collectedAt));
         data('coletor', s.collectorName);
         data('clone_genotipo', s.cloneGenotype);

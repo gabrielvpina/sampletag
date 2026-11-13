@@ -16,6 +16,7 @@ import '../../data/repositories/template_repository.dart';
 import '../../domain/geo.dart';
 import '../../domain/import_plan.dart';
 import '../../domain/models.dart';
+import '../../domain/template_share.dart';
 import '../photo_service.dart';
 import 'csv_exporter.dart';
 import 'html_report_builder.dart';
@@ -130,7 +131,8 @@ class ExportService {
 
   Future<File> csv(List<Sample> list) async {
     final s = await settings.get();
-    final text = const CsvExporter().export(list, await _templateMap());
+    final text = const CsvExporter()
+        .export(list, await _templateMap(), codesById: codesByIdOf(await samples.getAll()));
     final name = 'SampleTag_${safeFileName(s.project).isEmpty ? 'Amostras' : safeFileName(s.project)}_${_stamp()}.csv';
     return _writeTemp(name, utf8.encode(text));
   }
@@ -138,9 +140,17 @@ class ExportService {
   Future<File> kml(List<Sample> list) async {
     final s = await settings.get();
     final text = const KmlExporter()
-        .export(list, await _templateMap(), documentName: s.project.isEmpty ? 'SampleTag' : s.project);
+        .export(list, await _templateMap(),
+            documentName: s.project.isEmpty ? 'SampleTag' : s.project,
+            codesById: codesByIdOf(await samples.getAll()));
     final name = 'SampleTag_${safeFileName(s.project).isEmpty ? 'Amostras' : safeFileName(s.project)}_${_stamp()}.kml';
     return _writeTemp(name, utf8.encode(text));
+  }
+
+  /// Arquivo JSON de um modelo de ficha, para enviar a outro celular.
+  Future<File> templateFile(SampleTemplate t) {
+    final base = safeFileName(t.name).isEmpty ? t.codePrefix : safeFileName(t.name);
+    return _writeTemp('SampleTag_Modelo_$base.json', utf8.encode(encodeTemplateFile(t)));
   }
 
   /// Relatório HTML autocontido. Com [withPhotos], embute miniaturas
@@ -178,6 +188,7 @@ class ExportService {
       leafletCss: await rootBundle.loadString('assets/report/leaflet.min.css'),
       iconSvg: await rootBundle.loadString('assets/icon/sampletag_icon.svg'),
       thumbnails: thumbs,
+      codesById: codesByIdOf(await samples.getAll()),
     ));
     return _writeTemp(reportFileName(s.project, now), utf8.encode(html));
   }

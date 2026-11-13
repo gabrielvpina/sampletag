@@ -131,3 +131,17 @@ String normalizeCollectorCode(String code) {
   final c = code.toUpperCase().replaceAll(RegExp('[^A-Z0-9]'), '');
   return c.length > 4 ? c.substring(0, 4) : c;
 }
+
+/// Código de uma amostra técnica derivada de outra: `ORIGEM-01`, `ORIGEM-02`…
+/// Usa o maior sufixo numérico já existente para a mesma origem + 1.
+String nextChildCode(String parentCode, Iterable<String> existingCodes) {
+  final re = RegExp('^${RegExp.escape(parentCode.toLowerCase())}-(\\d+)\$');
+  var maxSeq = 0;
+  for (final code in existingCodes) {
+    final m = re.firstMatch(code.toLowerCase());
+    if (m == null) continue;
+    final n = int.tryParse(m.group(1)!) ?? 0;
+    if (n > maxSeq) maxSeq = n;
+  }
+  return '$parentCode-${(maxSeq + 1).toString().padLeft(2, '0')}';
+}

@@ -20,10 +20,14 @@ import '../../services/location_service.dart';
 /// O estado do formulário é salvo como rascunho a cada alteração (com
 /// atraso de 600 ms), para não se perder se o app for fechado no campo.
 class SampleFormScreen extends ConsumerStatefulWidget {
-  const SampleFormScreen({super.key, this.existing});
+  const SampleFormScreen({super.key, this.existing, this.parent});
 
   /// Amostra em edição; `null` para nova.
   final Sample? existing;
+
+  /// Nova amostra técnica derivada desta amostra (ex.: DNA extraído de uma
+  /// folha). Herda modelo, local, coletor e campos; o código vira `ORIGEM-01`.
+  final Sample? parent;
 
   @override
   ConsumerState<SampleFormScreen> createState() => _SampleFormScreenState();
@@ -57,12 +61,26 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
   bool _codeEdited = false;
   bool _ready = false;
   bool _dirty = false;
-  bool _busyGps = false;
   bool _saving = false;
   Timer? _draftTimer;
 
+  /// Amostra de origem (para amostras técnicas derivadas).
+  String? _parentId;
+  String? _parentCode;
+
+  // GPS automático: começa ao abrir uma amostra nova e vai refinando a
+  // posição até atingir boa precisão, esgotar o tempo ou o usuário digitar
+  // as coordenadas.
+  StreamSubscription<Position>? _gpsSub;
+  Timer? _gpsTimer;
+  bool _gpsActive = false;
+  String? _gpsError;
+  (String, Future<void> Function())? _gpsErrorAction;
+  bool _geocoded = false;
+  static const _gpsMaxWait = Duration(seconds: 90);
+
   bool get _isEdit => widget.existing != null;
-  String get _draftSlot => widget.existing?.id ?? 'new';
+  String get _draftSlot => widget.existing?.id ?? (widget.parent != null ? 'child-${widget.parent!.id}' : 'new');
 
   @override
   void initState() {
@@ -73,6 +91,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
   @override
   void dispose() {
     _draftTimer?.cancel();
+    _stopGps();
     for (final c in [_code, _collector, _contact, _clone, _origin, _city, _uf, _lat, _lon, _notes, _storage, ..._customText.values]) {
       c.dispose();
     }
@@ -87,8 +106,24 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
     final templates = await ref.read(templateRepoProvider).getAll();
     final settings = await ref.read(settingsRepoProvider).get();
     final e = widget.existing;
+    final parent = widget.parent;
     if (e != null) {
       _loadFromSample(e, templates);
+      if (e.parentId != null) {
+        _parentId = e.parentId;
+        _parentCode = (await ref.read(sampleRepoProvider).getById(e.parentId!))?.sampleCode;
+      }
+    } else if (parent != null) {
+      _loadFromSample(parent, templates);
+      _parentId = parent.id;
+      _parentCode = parent.sampleCode;
+      _code.clear();
+      _codeEdited = false;
+      _category = SampleCategory.technical;
+      _collectedAt = DateTime.now();
+      _photos = [];
+      _notes.clear();
+      _storage.text = _template?.defaultStorageInstruction ?? '';
     } else {
       _collector.text = settings.collectorName;
       _contact.text = settings.collectorContact;
@@ -110,7 +145,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
         await ref.read(settingsRepoProvider).clearDraft(_draftSlot);
       }
     }
-    if (!_isEdit && settings.needsCollectorCode && mounted) await _askCollectorCode(settings);
+    if (!_isEdit && parent == null && settings.needsCollectorCode && mounted) await _askCollectorCode(settings);
     if (!_isEdit && _template != null && _code.text.isEmpty) await _generateCode();
     if (!_isEdit) {
       // Android pode matar o app enquanto a câmera está aberta.
@@ -125,6 +160,8 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
       }
     }
     if (mounted) setState(() => _ready = true);
+    // Amostra nova sem coordenadas: busca a localização sozinha.
+    if (!_isEdit && mounted && _lat.text.trim().isEmpty) unawaited(_startGps());
   }
 
   void _loadFromSample(Sample s, List<SampleTemplate> templates) {
@@ -173,6 +210,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
         'notes': _notes.text,
         'storage': _storage.text,
         'custom': _custom,
+        'parentId': _parentId,
       };
 
   void _loadFromDraft(Map<String, Object?> d, List<SampleTemplate> templates) {
@@ -196,6 +234,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
     _newPhotos.addAll((d['newPhotos'] as List?)?.cast<String>() ?? const []);
     _notes.text = s('notes');
     _storage.text = s('storage');
+    _parentId = d['parentId'] as String? ?? _parentId;
     _custom
       ..clear()
       ..addAll((d['custom'] as Map?)?.cast<String, Object?>() ?? const {});
@@ -240,6 +279,11 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
   Future<void> _generateCode() async {
     final t = _template;
     if (t == null) return;
+    if (_parentCode != null) {
+      final code = await ref.read(sampleRepoProvider).nextChildCode(_parentCode!);
+      if (mounted) setState(() => _code.text = code);
+      return;
+    }
     final settings = await ref.read(settingsRepoProvider).get();
     final code = await ref.read(sampleRepoProvider).nextCode(
           pattern: settings.idPattern,
@@ -275,41 +319,87 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
   // GPS
   // ---------------------------------------------------------------------------
 
-  Future<void> _captureLocation() async {
+  /// Liga o GPS e acompanha as leituras, ficando com a mais precisa.
+  Future<void> _startGps() async {
+    _stopGps();
     final loc = ref.read(locationServiceProvider);
-    if (await loc.needsPermissionPrompt()) {
-      if (!mounted) return;
-      final ok = await confirm(
-        context,
-        title: 'Permitir localização',
-        message: 'O SampleTag usa o GPS para registrar onde a amostra foi coletada '
-            '(latitude, longitude, altitude e precisão). Os dados ficam somente no aparelho.',
-        confirmLabel: 'Continuar',
-      );
-      if (!ok) return;
-    }
-    setState(() => _busyGps = true);
+    setState(() {
+      _gpsActive = true;
+      _gpsError = null;
+      _gpsErrorAction = null;
+    });
     try {
-      final pos = await loc.current();
-      _applyPosition(pos);
-      await _reverseGeocode(pos.latitude, pos.longitude);
+      if (await loc.needsPermissionPrompt()) {
+        if (!mounted) return;
+        final ok = await confirm(
+          context,
+          title: 'Permitir localização',
+          message: 'O SampleTag registra automaticamente onde a amostra foi coletada '
+              '(latitude, longitude, altitude e precisão). Os dados ficam somente no aparelho.',
+          confirmLabel: 'Continuar',
+        );
+        if (!ok) {
+          _gpsFailed('Localização não autorizada. Digite as coordenadas ou toque em atualizar.');
+          return;
+        }
+      }
+      await loc.ensureReady();
     } on LocationServiceDisabled catch (e) {
-      if (mounted) _errorWithAction(e.message, 'Ativar', loc.openLocationSettings);
+      _gpsFailed(e.message, ('Ativar', loc.openLocationSettings));
+      return;
     } on LocationPermissionPermanentlyDenied catch (e) {
-      if (mounted) _errorWithAction(e.message, 'Abrir ajustes', loc.openAppSettings);
+      _gpsFailed(e.message, ('Abrir ajustes', loc.openAppSettings));
+      return;
     } on Object catch (e) {
-      if (mounted) showError(context, e);
-    } finally {
-      if (mounted) setState(() => _busyGps = false);
+      _gpsFailed(friendlyError(e));
+      return;
     }
+    if (!mounted) return;
+    _gpsTimer = Timer(_gpsMaxWait, () {
+      final got = _accuracy != null;
+      _stopGps();
+      if (!got) _gpsFailed('Sem sinal de GPS. Vá para um local aberto e toque em atualizar.');
+    });
+    _gpsSub = loc.stream().listen(
+      (p) {
+        if (!mounted) return;
+        final first = _accuracy == null || _lat.text.isEmpty;
+        if (first || p.accuracy < _accuracy!) _applyPosition(p);
+        if (!_geocoded) {
+          _geocoded = true;
+          _reverseGeocode(p.latitude, p.longitude);
+        }
+        if (p.accuracy <= LocationService.goodAccuracyMeters) _stopGps();
+      },
+      onError: (Object e) {
+        _stopGps();
+        _gpsFailed(friendlyError(e));
+      },
+    );
   }
 
-  void _errorWithAction(String msg, String action, Future<void> Function() onTap) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      duration: const Duration(seconds: 8),
-      action: SnackBarAction(label: action, onPressed: () => onTap()),
-    ));
+  void _stopGps() {
+    _gpsSub?.cancel();
+    _gpsSub = null;
+    _gpsTimer?.cancel();
+    _gpsTimer = null;
+    if (_gpsActive && mounted) setState(() => _gpsActive = false);
+    _gpsActive = false;
+  }
+
+  void _gpsFailed(String msg, [(String, Future<void> Function())? action]) {
+    if (!mounted) return;
+    setState(() {
+      _gpsActive = false;
+      _gpsError = msg;
+      _gpsErrorAction = action;
+    });
+  }
+
+  /// O usuário digitou as coordenadas: o GPS não deve sobrescrevê-las.
+  void _manualCoords() {
+    _stopGps();
+    _changed();
   }
 
   void _applyPosition(Position p) {
@@ -318,8 +408,10 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
       _lon.text = fmtCoord(p.longitude);
       _altitude = p.altitude;
       _accuracy = p.accuracy;
+      _gpsError = null;
     });
-    _changed();
+    // Posição automática numa ficha intocada não conta como alteração.
+    if (_dirty) _changed();
   }
 
   /// Preenche município/UF vazios. Primeiro usa os limites do IBGE
@@ -347,7 +439,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
       if (_city.text.isEmpty && (city ?? '').isNotEmpty) _city.text = city!;
       if (_uf.text.isEmpty && (uf ?? '').isNotEmpty) _uf.text = uf!;
     });
-    _changed();
+    if (_dirty) _changed();
   }
 
   Future<void> _waitBetterAccuracy() async {
@@ -357,7 +449,9 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
       builder: (_) => _AccuracyDialog(stream: ref.read(locationServiceProvider).stream()),
     );
     if (pos != null) {
+      _stopGps();
       _applyPosition(pos);
+      _changed();
       await _reverseGeocode(pos.latitude, pos.longitude);
     }
   }
@@ -417,6 +511,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
       if (mounted) showMessage(context, 'Já existe uma amostra com o código ${_code.text.trim()}.', error: true);
       return;
     }
+    _stopGps();
     setState(() => _saving = true);
     try {
       final now = DateTime.now();
@@ -441,6 +536,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
         notes: _notes.text.trim(),
         storageInstruction: _storage.text.trim(),
         customFields: Map.of(_custom)..removeWhere((_, v) => v == null || (v is String && v.isEmpty)),
+        parentId: _parentId,
         createdAt: e?.createdAt ?? now,
         updatedAt: now,
       );
@@ -508,7 +604,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(_isEdit ? l.editSample : l.newSample),
+          title: Text(_isEdit ? l.editSample : widget.parent != null ? 'Nova amostra técnica' : l.newSample),
           actions: [
             TextButton(
               key: const Key('save-sample'),
@@ -525,6 +621,16 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
                   children: [
+                    if (_parentCode != null || _parentId != null)
+                      Card(
+                        margin: const EdgeInsets.only(top: 8),
+                        color: Theme.of(context).colorScheme.secondaryContainer,
+                        child: ListTile(
+                          leading: const Icon(Icons.account_tree_outlined),
+                          title: Text('Derivada de ${_parentCode ?? 'amostra excluída'}'),
+                          subtitle: const Text('Local, coletor e campos vieram da amostra de origem.'),
+                        ),
+                      ),
                     const SectionTitle('Modelo de ficha'),
                     DropdownButtonFormField<String>(
                       key: const Key('template-field'),
@@ -757,14 +863,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          FilledButton.icon(
-            key: const Key('capture-location'),
-            onPressed: _busyGps ? null : _captureLocation,
-            icon: _busyGps
-                ? const SizedBox.square(dimension: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
-                : const Icon(Icons.my_location),
-            label: Text(_busyGps ? 'Obtendo sinal de GPS…' : 'Capturar localização'),
-          ),
+          _gpsStatus(context),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(
@@ -773,7 +872,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
                 decoration: const InputDecoration(labelText: 'Latitude', isDense: true),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                 validator: (v) => coordValidator(v, 90),
-                onChanged: (_) => _changed(),
+                onChanged: (_) => _manualCoords(),
               ),
             ),
             const SizedBox(width: 8),
@@ -783,7 +882,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
                 decoration: const InputDecoration(labelText: 'Longitude', isDense: true),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                 validator: (v) => coordValidator(v, 180),
-                onChanged: (_) => _changed(),
+                onChanged: (_) => _manualCoords(),
               ),
             ),
           ]),
@@ -799,7 +898,7 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
               if (_altitude != null) Chip(avatar: const Icon(Icons.terrain), label: Text('Altitude: ${fmtMeters(_altitude, decimals: 0)}')),
             ]),
           ],
-          if (poor) ...[
+          if (poor && !_gpsActive) ...[
             const SizedBox(height: 8),
             Text(
               'Precisão acima de ${LocationService.goodAccuracyMeters.toInt()} m. '
@@ -816,6 +915,45 @@ class _SampleFormScreenState extends ConsumerState<SampleFormScreen> {
         ]),
       ),
     );
+  }
+
+  /// Situação do GPS automático, com botão discreto para nova leitura.
+  Widget _gpsStatus(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final acc = _accuracy;
+    final Widget icon;
+    final String text;
+    if (_gpsActive) {
+      icon = const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2.5));
+      text = acc == null ? 'Buscando sinal de GPS…' : 'Refinando a precisão (±${fmtMeters(acc)})…';
+    } else if (_gpsError != null) {
+      icon = Icon(Icons.location_disabled, color: AppWarnColor.of(context));
+      text = _gpsError!;
+    } else if (_lat.text.trim().isNotEmpty) {
+      icon = Icon(Icons.gps_fixed, color: scheme.primary);
+      text = acc == null ? 'Coordenadas informadas.' : 'Localização registrada.';
+    } else {
+      icon = const Icon(Icons.location_searching);
+      text = 'Sem coordenadas.';
+    }
+    final action = _gpsErrorAction;
+    return Row(children: [
+      icon,
+      const SizedBox(width: 10),
+      Expanded(child: Text(text, key: const Key('gps-status'), style: const TextStyle(fontWeight: FontWeight.w600))),
+      if (action != null) TextButton(onPressed: () => action.$2(), child: Text(action.$1)),
+      if (!_gpsActive)
+        IconButton(
+          key: const Key('capture-location'),
+          tooltip: 'Atualizar localização',
+          icon: const Icon(Icons.refresh),
+          onPressed: () {
+            _geocoded = false;
+            _accuracy = null;
+            _startGps();
+          },
+        ),
+    ]);
   }
 
   Widget _photosSection() {

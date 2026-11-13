@@ -54,6 +54,10 @@ class Samples extends Table {
   TextColumn get notes => text().withDefault(const Constant(''))();
   TextColumn get storageInstruction => text().withDefault(const Constant(''))();
   TextColumn get customFieldsJson => text().withDefault(const Constant('{}'))();
+
+  /// Amostra de origem (amostra técnica derivada de outra). Sem chave
+  /// estrangeira: a origem pode ser excluída ou ainda não ter sido importada.
+  TextColumn get parentId => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -83,12 +87,15 @@ class AppDatabase extends _$AppDatabase {
   /// Versão atual do esquema. Ao alterar tabelas: incremente aqui e adicione
   /// um passo em [migrations] com a chave = versão de origem.
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   /// Migrações versionadas: `migrations[n]` leva o esquema da versão n para n+1.
   /// Exemplo futuro:
   ///   2: (m, db) => m.addColumn(db.samples, db.samples.someNewColumn),
-  static final Map<int, MigrationStep> migrations = {};
+  static final Map<int, MigrationStep> migrations = {
+    // v2: amostras técnicas derivadas de uma amostra de origem.
+    1: (m, db) => m.addColumn(db.samples, db.samples.parentId),
+  };
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -171,6 +178,7 @@ class AppDatabase extends _$AppDatabase {
         notes: Value(s.notes),
         storageInstruction: Value(s.storageInstruction),
         customFieldsJson: Value(jsonEncode(s.customFields)),
+        parentId: Value(s.parentId),
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
       );
@@ -202,6 +210,7 @@ class AppDatabase extends _$AppDatabase {
       notes: r.notes,
       storageInstruction: r.storageInstruction,
       customFields: Sample.decodeCustomFields(r.customFieldsJson),
+      parentId: r.parentId,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     );

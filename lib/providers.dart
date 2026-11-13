@@ -74,3 +74,7 @@ final filteredSamplesProvider = Provider<AsyncValue<List<Sample>>>((ref) {
   final templates = ref.watch(templatesByIdProvider);
   return ref.watch(samplesProvider).whenData((list) => filter.apply(list, templates));
 });
+
+/// Amostras técnicas derivadas de uma amostra.
+final childSamplesProvider = StreamProvider.family<List<Sample>, String>(
+    (ref, parentId) => ref.watch(sampleRepoProvider).watchChildren(parentId));

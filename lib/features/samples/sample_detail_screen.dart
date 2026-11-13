@@ -41,9 +41,11 @@ class SampleDetailScreen extends ConsumerWidget {
               ),
               PopupMenuButton<String>(
                 onSelected: (v) async {
+                  if (v == 'child') _newChild(context, s);
                   if (v == 'delete') await _delete(context, ref, s);
                 },
                 itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'child', child: Text('Criar amostra técnica')),
                   PopupMenuItem(value: 'delete', child: Text('Excluir amostra')),
                 ],
               ),
@@ -58,6 +60,7 @@ class SampleDetailScreen extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
             children: [
               _Header(sample: s, template: t),
+              if (s.parentId != null) _ParentLink(parentId: s.parentId!),
               if (s.photos.isNotEmpty) ...[
                 const SectionTitle('Fotos'),
                 SizedBox(
@@ -90,6 +93,7 @@ class SampleDetailScreen extends ConsumerWidget {
                 ('Observações', s.notes),
                 ('Armazenamento', s.storageInstruction),
               ]),
+              _Children(parent: s, templates: templates, onCreate: () => _newChild(context, s)),
               const SectionTitle('Localização'),
               if (s.hasLocation) ...[
                 _Fields(rows: [
@@ -140,11 +144,16 @@ class SampleDetailScreen extends ConsumerWidget {
     );
   }
 
+  void _newChild(BuildContext context, Sample s) => Navigator.push(
+      context, MaterialPageRoute(builder: (_) => SampleFormScreen(parent: s)));
+
   Future<void> _delete(BuildContext context, WidgetRef ref, Sample s) async {
+    final children = ref.read(childSamplesProvider(s.id)).value?.length ?? 0;
     final ok = await confirm(
       context,
       title: 'Excluir ${s.sampleCode}?',
       message: 'A amostra e suas ${s.photos.length} foto(s) serão apagadas deste aparelho. '
+          '${children > 0 ? 'As $children amostra(s) técnica(s) derivada(s) dela serão mantidas. ' : ''}'
           'Esta ação não pode ser desfeita.',
       confirmLabel: 'Excluir',
       destructive: true,
@@ -158,6 +167,64 @@ class SampleDetailScreen extends ConsumerWidget {
       showMessage(context, 'Amostra excluída.');
       Navigator.pop(context);
     }
+  }
+}
+
+/// Link para a amostra de origem de uma amostra técnica.
+class _ParentLink extends ConsumerWidget {
+  const _ParentLink({required this.parentId});
+  final String parentId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final parent = ref.watch(sampleByIdProvider(parentId)).value;
+    return Card(
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      child: ListTile(
+        leading: const Icon(Icons.account_tree_outlined),
+        title: Text(parent == null ? 'Amostra de origem não está neste aparelho' : 'Derivada de ${parent.sampleCode}'),
+        subtitle: parent == null ? null : Text([fmtDateTime(parent.collectedAt), parent.place].where((e) => e.isNotEmpty).join(' · ')),
+        trailing: parent == null ? null : const Icon(Icons.chevron_right),
+        onTap: parent == null
+            ? null
+            : () => Navigator.push(context, MaterialPageRoute(builder: (_) => SampleDetailScreen(sampleId: parent.id))),
+      ),
+    );
+  }
+}
+
+/// Amostras técnicas derivadas desta amostra.
+class _Children extends ConsumerWidget {
+  const _Children({required this.parent, required this.templates, required this.onCreate});
+  final Sample parent;
+  final Map<String, SampleTemplate> templates;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final children = ref.watch(childSamplesProvider(parent.id)).value ?? const <Sample>[];
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SectionTitle('Amostras técnicas (${children.length})'),
+      for (final c in children)
+        Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            leading: TemplateDot(templates[c.templateId], size: 16),
+            title: Text(c.sampleCode, style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: Text([fmtDateTime(c.collectedAt), if (c.notes.isNotEmpty) c.notes]
+                .join(' · '), maxLines: 2, overflow: TextOverflow.ellipsis),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => SampleDetailScreen(sampleId: c.id))),
+          ),
+        ),
+      OutlinedButton.icon(
+        key: const Key('new-child-sample'),
+        onPressed: onCreate,
+        icon: const Icon(Icons.add),
+        label: const Text('Criar amostra técnica'),
+      ),
+    ]);
   }
 }
 

@@ -800,6 +800,17 @@ class $SamplesTable extends Samples with TableInfo<$SamplesTable, SampleRow> {
     requiredDuringInsert: false,
     defaultValue: const Constant('{}'),
   );
+  static const VerificationMeta _parentIdMeta = const VerificationMeta(
+    'parentId',
+  );
+  @override
+  late final GeneratedColumn<String> parentId = GeneratedColumn<String>(
+    'parent_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -843,6 +854,7 @@ class $SamplesTable extends Samples with TableInfo<$SamplesTable, SampleRow> {
     notes,
     storageInstruction,
     customFieldsJson,
+    parentId,
     createdAt,
     updatedAt,
   ];
@@ -1006,6 +1018,12 @@ class $SamplesTable extends Samples with TableInfo<$SamplesTable, SampleRow> {
         ),
       );
     }
+    if (data.containsKey('parent_id')) {
+      context.handle(
+        _parentIdMeta,
+        parentId.isAcceptableOrUnknown(data['parent_id']!, _parentIdMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1107,6 +1125,10 @@ class $SamplesTable extends Samples with TableInfo<$SamplesTable, SampleRow> {
         DriftSqlType.string,
         data['${effectivePrefix}custom_fields_json'],
       )!,
+      parentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}parent_id'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1146,6 +1168,10 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
   final String notes;
   final String storageInstruction;
   final String customFieldsJson;
+
+  /// Amostra de origem (amostra técnica derivada de outra). Sem chave
+  /// estrangeira: a origem pode ser excluída ou ainda não ter sido importada.
+  final String? parentId;
   final DateTime createdAt;
   final DateTime updatedAt;
   const SampleRow({
@@ -1168,6 +1194,7 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
     required this.notes,
     required this.storageInstruction,
     required this.customFieldsJson,
+    this.parentId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1201,6 +1228,9 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
     map['notes'] = Variable<String>(notes);
     map['storage_instruction'] = Variable<String>(storageInstruction);
     map['custom_fields_json'] = Variable<String>(customFieldsJson);
+    if (!nullToAbsent || parentId != null) {
+      map['parent_id'] = Variable<String>(parentId);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -1235,6 +1265,9 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
       notes: Value(notes),
       storageInstruction: Value(storageInstruction),
       customFieldsJson: Value(customFieldsJson),
+      parentId: parentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(parentId),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1269,6 +1302,7 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
         json['storageInstruction'],
       ),
       customFieldsJson: serializer.fromJson<String>(json['customFieldsJson']),
+      parentId: serializer.fromJson<String?>(json['parentId']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -1296,6 +1330,7 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
       'notes': serializer.toJson<String>(notes),
       'storageInstruction': serializer.toJson<String>(storageInstruction),
       'customFieldsJson': serializer.toJson<String>(customFieldsJson),
+      'parentId': serializer.toJson<String?>(parentId),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -1321,6 +1356,7 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
     String? notes,
     String? storageInstruction,
     String? customFieldsJson,
+    Value<String?> parentId = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => SampleRow(
@@ -1345,6 +1381,7 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
     notes: notes ?? this.notes,
     storageInstruction: storageInstruction ?? this.storageInstruction,
     customFieldsJson: customFieldsJson ?? this.customFieldsJson,
+    parentId: parentId.present ? parentId.value : this.parentId,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -1393,6 +1430,7 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
       customFieldsJson: data.customFieldsJson.present
           ? data.customFieldsJson.value
           : this.customFieldsJson,
+      parentId: data.parentId.present ? data.parentId.value : this.parentId,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -1420,6 +1458,7 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
           ..write('notes: $notes, ')
           ..write('storageInstruction: $storageInstruction, ')
           ..write('customFieldsJson: $customFieldsJson, ')
+          ..write('parentId: $parentId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1447,6 +1486,7 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
     notes,
     storageInstruction,
     customFieldsJson,
+    parentId,
     createdAt,
     updatedAt,
   ]);
@@ -1473,6 +1513,7 @@ class SampleRow extends DataClass implements Insertable<SampleRow> {
           other.notes == this.notes &&
           other.storageInstruction == this.storageInstruction &&
           other.customFieldsJson == this.customFieldsJson &&
+          other.parentId == this.parentId &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -1497,6 +1538,7 @@ class SamplesCompanion extends UpdateCompanion<SampleRow> {
   final Value<String> notes;
   final Value<String> storageInstruction;
   final Value<String> customFieldsJson;
+  final Value<String?> parentId;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -1520,6 +1562,7 @@ class SamplesCompanion extends UpdateCompanion<SampleRow> {
     this.notes = const Value.absent(),
     this.storageInstruction = const Value.absent(),
     this.customFieldsJson = const Value.absent(),
+    this.parentId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1544,6 +1587,7 @@ class SamplesCompanion extends UpdateCompanion<SampleRow> {
     this.notes = const Value.absent(),
     this.storageInstruction = const Value.absent(),
     this.customFieldsJson = const Value.absent(),
+    this.parentId = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -1574,6 +1618,7 @@ class SamplesCompanion extends UpdateCompanion<SampleRow> {
     Expression<String>? notes,
     Expression<String>? storageInstruction,
     Expression<String>? customFieldsJson,
+    Expression<String>? parentId,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -1598,6 +1643,7 @@ class SamplesCompanion extends UpdateCompanion<SampleRow> {
       if (notes != null) 'notes': notes,
       if (storageInstruction != null) 'storage_instruction': storageInstruction,
       if (customFieldsJson != null) 'custom_fields_json': customFieldsJson,
+      if (parentId != null) 'parent_id': parentId,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -1624,6 +1670,7 @@ class SamplesCompanion extends UpdateCompanion<SampleRow> {
     Value<String>? notes,
     Value<String>? storageInstruction,
     Value<String>? customFieldsJson,
+    Value<String?>? parentId,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -1648,6 +1695,7 @@ class SamplesCompanion extends UpdateCompanion<SampleRow> {
       notes: notes ?? this.notes,
       storageInstruction: storageInstruction ?? this.storageInstruction,
       customFieldsJson: customFieldsJson ?? this.customFieldsJson,
+      parentId: parentId ?? this.parentId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -1714,6 +1762,9 @@ class SamplesCompanion extends UpdateCompanion<SampleRow> {
     if (customFieldsJson.present) {
       map['custom_fields_json'] = Variable<String>(customFieldsJson.value);
     }
+    if (parentId.present) {
+      map['parent_id'] = Variable<String>(parentId.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -1748,6 +1799,7 @@ class SamplesCompanion extends UpdateCompanion<SampleRow> {
           ..write('notes: $notes, ')
           ..write('storageInstruction: $storageInstruction, ')
           ..write('customFieldsJson: $customFieldsJson, ')
+          ..write('parentId: $parentId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -2380,6 +2432,7 @@ typedef $$SamplesTableCreateCompanionBuilder = SamplesCompanion Function({
   Value<String> notes,
   Value<String> storageInstruction,
   Value<String> customFieldsJson,
+  Value<String?> parentId,
   required DateTime createdAt,
   required DateTime updatedAt,
   Value<int> rowid,
@@ -2404,6 +2457,7 @@ typedef $$SamplesTableUpdateCompanionBuilder = SamplesCompanion Function({
   Value<String> notes,
   Value<String> storageInstruction,
   Value<String> customFieldsJson,
+  Value<String?> parentId,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
   Value<int> rowid,
@@ -2527,6 +2581,11 @@ class $$SamplesTableFilterComposer
 
   ColumnFilters<String> get customFieldsJson => $composableBuilder(
     column: $table.customFieldsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get parentId => $composableBuilder(
+    column: $table.parentId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2663,6 +2722,11 @@ class $$SamplesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get parentId => $composableBuilder(
+    column: $table.parentId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -2782,6 +2846,9 @@ class $$SamplesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get parentId =>
+      $composableBuilder(column: $table.parentId, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -2859,6 +2926,7 @@ class $$SamplesTableTableManager
                 Value<String> notes = const Value.absent(),
                 Value<String> storageInstruction = const Value.absent(),
                 Value<String> customFieldsJson = const Value.absent(),
+                Value<String?> parentId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -2882,6 +2950,7 @@ class $$SamplesTableTableManager
                 notes: notes,
                 storageInstruction: storageInstruction,
                 customFieldsJson: customFieldsJson,
+                parentId: parentId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -2907,6 +2976,7 @@ class $$SamplesTableTableManager
                 Value<String> notes = const Value.absent(),
                 Value<String> storageInstruction = const Value.absent(),
                 Value<String> customFieldsJson = const Value.absent(),
+                Value<String?> parentId = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -2930,6 +3000,7 @@ class $$SamplesTableTableManager
                 notes: notes,
                 storageInstruction: storageInstruction,
                 customFieldsJson: customFieldsJson,
+                parentId: parentId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

@@ -179,7 +179,7 @@ void main() {
     expect(svg, contains('°O'));
     // Ilhéus (lat -14.79) deve ficar acima de Camacan (lat -15.41).
     double cy(String code) {
-      final m = RegExp('<title>${RegExp.escape(code)}[^<]*</title><circle cx="([\\d.]+)" cy="([\\d.]+)"').firstMatch(svg)!;
+      final m = RegExp('transform="translate\\(([\\d.]+) ([\\d.]+)\\)"><title>${RegExp.escape(code)}[^<]*</title>').firstMatch(svg)!;
       return double.parse(m.group(2)!);
     }
     expect(cy('CAC-2026-0001'), lessThan(cy('CAC-2026-0005')));

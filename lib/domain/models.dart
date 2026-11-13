@@ -194,6 +194,7 @@ class Sample {
     this.notes = '',
     this.storageInstruction = '',
     this.customFields = const {},
+    this.parentId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -225,8 +226,14 @@ class Sample {
 
   /// Valores dos campos extras do modelo, indexados por [TemplateField.key].
   final Map<String, Object?> customFields;
+
+  /// Amostra de origem (ex.: a amostra biológica da qual esta amostra
+  /// técnica foi derivada). `null` para amostras independentes.
+  final String? parentId;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  bool get isChild => parentId != null;
 
   bool get hasLocation => latitude != null && longitude != null;
 
@@ -256,6 +263,7 @@ class Sample {
     String? notes,
     String? storageInstruction,
     Map<String, Object?>? customFields,
+    String? Function()? parentId,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) =>
@@ -279,6 +287,7 @@ class Sample {
         notes: notes ?? this.notes,
         storageInstruction: storageInstruction ?? this.storageInstruction,
         customFields: customFields ?? this.customFields,
+        parentId: parentId != null ? parentId() : this.parentId,
         createdAt: createdAt ?? this.createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -303,6 +312,7 @@ class Sample {
         'notes': notes,
         'storageInstruction': storageInstruction,
         'customFields': customFields,
+        if (parentId != null) 'parentId': parentId,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
       };
@@ -329,6 +339,7 @@ class Sample {
       notes: json['notes'] as String? ?? '',
       storageInstruction: json['storageInstruction'] as String? ?? '',
       customFields: (json['customFields'] as Map?)?.cast<String, Object?>() ?? const {},
+      parentId: json['parentId'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
@@ -345,6 +356,14 @@ class Sample {
     }
   }
 }
+
+/// Código da amostra de origem de [s], procurado em [codesById]
+/// (id -> código). Vazio se não houver origem ou ela não estiver no mapa.
+String parentCodeOf(Sample s, Map<String, String> codesById) =>
+    s.parentId == null ? '' : codesById[s.parentId] ?? '';
+
+/// Mapa id -> código das amostras.
+Map<String, String> codesByIdOf(Iterable<Sample> samples) => {for (final s in samples) s.id: s.sampleCode};
 
 /// Configurações do app.
 class AppSettings {
